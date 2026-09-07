@@ -32,8 +32,12 @@ export function FilterBar({ filters, tools, projects, showSearch = true }: Props
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
   const [search, setSearch] = useState(filters.search ?? "");
-
-  useEffect(() => setSearch(filters.search ?? ""), [filters.search]);
+  const [syncedSearch, setSyncedSearch] = useState(filters.search);
+  // Re-sync the input when the URL changes from outside (chips, reset, back button).
+  if (syncedSearch !== filters.search) {
+    setSyncedSearch(filters.search);
+    setSearch(filters.search ?? "");
+  }
 
   function apply(patch: Partial<DashboardFilters>) {
     const next = { ...filters, ...patch, page: 1 };

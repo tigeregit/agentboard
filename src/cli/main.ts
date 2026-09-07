@@ -118,7 +118,7 @@ filterOptions(program.command("list").alias("ls").description("list sessions, ne
   .option("-n, --limit <n>", "max rows", "50")
   .option("--offset <n>", "skip rows", "0")
   .option("--asc", "oldest first")
-  .option("--json", "machine-readable output (array of session summaries)")
+  .option("--json", "machine-readable output ({ total, items })")
   .option("--keys", "print only session keys, one per line")
   .action(async (o: FilterOpts & { limit: string; offset: string; asc?: boolean; json?: boolean; keys?: boolean }) => {
     const q = { ...toQuery(o), limit: Number(o.limit), offset: Number(o.offset), order: o.asc ? ("asc" as const) : ("desc" as const) };
