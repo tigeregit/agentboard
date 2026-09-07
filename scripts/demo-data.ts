@@ -10,6 +10,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openSqlite } from "../src/engine/util/sqlite";
+import type { Demo } from "./demo-lib";
+import { FIXTURES } from "./fixtures";
 
 /**
  * Wraps bytes in a valid zstd frame made of raw (stored) blocks. Node 22.14 has
@@ -511,6 +513,10 @@ for (let s = 0; s < 3; s++) {
   }
   write(path.join(HOME, "Downloads/claude-export/conversations.json"), JSON.stringify(claude));
 }
+
+// ---------- Per-tool fixture modules (scripts/fixtures/*.ts) ----------
+const demo: Demo = { HOME, now, H, D, PROJECTS, PROMPTS, REPLIES, TOOLS, rnd, ensure, write, jsonl, iso, uuid, md5ish, turns, next, compress, openSqlite };
+for (const fixture of FIXTURES) fixture(demo);
 
 console.log(`demo home written to ${HOME} (${counter} sessions across all formats)`);
 console.log(`\nTry:\n  AGENTBOARD_FAKE_HOME=${HOME} npm run cli -- scan\n  AGENTBOARD_FAKE_HOME=${HOME} npm run cli -- import chatgpt ${path.join(HOME, "Downloads/chatgpt-export/conversations.json")}\n  AGENTBOARD_FAKE_HOME=${HOME} npm run dev`);
