@@ -54,7 +54,7 @@ AGENTBOARD_FAKE_HOME=/tmp/agentboard-demo-home npm run cli -- list --since 7d
 
 ## Dashboard
 
-- **Sessions** (`/`) — stat cards, per-day stacked activity chart, filters (search, tool, project, time range) and the session list grouped by day. Filters live in the URL, so any view is linkable.
+- **Sessions** (`/`) — stat cards, a GitHub-style **interactions heatmap** (52 weeks; cell colour = human turns that day summed over all sessions, i.e. how much you talked to agents, not how many sessions you opened; click a cell to narrow the board to that day via `?day=YYYY-MM-DD`), per-day stacked activity chart, filters (search, tool, project, time range) and the session list grouped by day. Filters live in the URL, so any view is linkable.
 - **Session detail** (`/sessions/<key>`) — metadata, subagent links, and the full transcript loaded on demand from the tool's own store (user/assistant bubbles, tool calls, collapsible tool output).
 - **Projects** (`/projects`) — working directories aggregated across tools with a per-tool breakdown.
 - **Reports** (`/summary`) — daily / weekly / monthly digest with a ready-to-paste Markdown block and the equivalent CLI command.
@@ -93,7 +93,8 @@ Served by the dashboard process, same engine and filter grammar:
 | --- | --- |
 | `GET /api/sessions?tool=a,b&project=x&q=text&range=7d\|since=..&until=..&page=1&limit=50&order=desc` | paged session summaries |
 | `GET /api/sessions/{key}` | summary + full transcript (`?transcript=0` to skip loading it) |
-| `GET /api/projects`, `GET /api/tools`, `GET /api/days` | aggregates (same filters) |
+| `GET /api/projects`, `GET /api/tools`, `GET /api/days` | aggregates (same filters); `days` items carry `sessionCount`, `messageCount`, `userMessageCount`, `byTool` |
+| `GET /api/heatmap?weeks=52&tool=..&project=..&q=..` | dense per-day series for the heatmap (`userMessageCount` = human turns), zeros included |
 | `GET /api/summary?period=week&anchor=2026-09-01&format=json\|md` | period digest |
 | `GET /api/sources` | detection / strategy matrix |
 | `POST /api/scan` `{ "tools": ["cursor"], "full": false }` | re-index |
