@@ -95,9 +95,19 @@ npm run cli -- <command>        # or: npm link && agentboard <command>
 agentboard sources [--json]                    # detection + strategy matrix
 agentboard scan [--tool a,b] [--full] [--json] # incremental index (file fingerprints), --full re-parses everything
 agentboard list [--since 7d] [--until 2026-09-01] [--tool cursor,codex] [--project infra] [--search text]
-                [--limit 50] [--offset 0] [--asc] [--keys] [--json]
-agentboard search timezone error [--since 30d] [--json]
-agentboard show <key> [--json] [--summary] [--max-chars 4000]   # transcript as Markdown or JSON
+                [--limit 50] [--offset 0] [--asc] [--keys] [--json [--full]]
+agentboard search timezone error [--since 30d] [--json]          # session level: titles / prompts / project
+
+# inside transcripts (the part index; see "Parts" below)
+agentboard grep <query...> [-k prompt,reply,reasoning,tool_call,tool_result,plan,subagent,compaction,context,event]
+                [-c shell,edit,read,search,web,subagent,plan,ask,browser,mcp] [--tool-name Bash] [--file path]
+                [--errors] [--session <key>] [--role user] [-t ...] [-p ...] [--since ...] [-n 20] [--by-session] [--json]
+agentboard show <key>                                          # outline: one row per turn (prompt → last reply, calls by category, errors, files)
+agentboard show <key> --turn 3 | --turn 3:5 | --seq 120:140      # dump parts; per-part --max-chars 2000, total --budget 24000 (tells you how to continue)
+agentboard show <key> --parts [-k reply] [-c shell] [--errors] [--grep text] [--file x]   # one row per matching part
+agentboard show <key> -k prompt                                # e.g. only what the human asked; --full for everything (still budgeted)
+agentboard show <key> --files | --summary | --json
+agentboard files [--since 30d] [-p proj] [--session key] [--file text] [-n 50]   # files agents edited / read, across sessions
 agentboard projects [--since 30d] [--tool ...] [--json]
 agentboard tools [--json]
 agentboard summary --period day|week|month [--date 2026-09-01] [--tool ...] [--project ...] [--prompts] [--json]
@@ -112,7 +122,33 @@ agentboard server restart [-p] [-H] [--build] [--json]            # keeps previo
 
 `serve` and `server start` run the production build (`next start`); they build it on first use or with `--build`, and `--dev` runs `next dev` instead. The background service records its pid, port and URL in `~/.agentboard/server.json` and appends output to `~/.agentboard/server.log`; `stop` sends SIGTERM to the process group and escalates to SIGKILL after 10 s. `AGENTBOARD_PORT` / `AGENTBOARD_HOST` set the defaults; use `-H 0.0.0.0` to expose the board on the LAN.
 
-Dates accept ISO, `YYYY-MM-DD`, `today`, `yesterday`, or relative `12h`, `7d`, `2w`, `1m`. Every command has `--json` for machine consumption; `list --json` returns `{ total, items }` and session keys look like `claude-code:<uuid>`. Query commands refresh the index first (incremental, usually milliseconds); pass `--no-auto-scan` to skip that, or `--index <file>` to point at another index.
+Dates accept ISO, `YYYY-MM-DD`, `today`, `yesterday`, or relative `12h`, `7d`, `2w`, `1m`; unparsable values are rejected (exit 2) rather than ignored. Every command has `--json` for machine consumption; `list --json` returns `{ total, items }` with compact records (`--full` adds `promptText` etc.) and session keys look like `claude-code:<uuid>`. Query commands refresh the index first (incremental, usually milliseconds); pass `--no-auto-scan` to skip that, or `--index <file>` to point at another index.
+
+### Parts: the retrieval unit
+
+The CLI is meant to be driven by another agent, so nothing should return a whole transcript by accident. Every session is decomposed into typed **parts** (vocabulary borrowed from the DeepSeek Harness session log: who produced it, what kind of thing it is, and for tool traffic a cross-agent category):
+
+| kind | what it is | typical filters |
+| --- | --- | --- |
+| `prompt` | a human utterance; each one opens a new **turn** | `-k prompt` = "what did I ask" |
+| `context` | text the harness/IDE injected (`form`: instructions, snapshot, notice, attachment, recall, system) — never mistaken for a prompt | titles and `firstPrompt` are computed after this split |
+| `reasoning` | thinking blocks when the source keeps them (Claude Code, Cursor, dsh, Codex summaries) | |
+| `reply` | assistant visible text | outline shows the last reply of each turn |
+| `tool_call` | full arguments, `category` (shell / read / edit / search / web / subagent / plan / ask / browser / mcp), extracted `command`, `files` | `-c shell`, `--tool-name apply_patch`, `--file src/x.py` |
+| `tool_result` | output linked to its call by id; `isError`, `exitCode` when known | `--errors` |
+| `plan`, `subagent`, `compaction`, `event` | todo updates, child agents, context compactions, aborted turns / approvals | |
+
+Parts live in the index (`parts` + FTS5 trigram `parts_fts`, so CJK and identifiers match as substrings and hits come back as snippets). `scan` fills them for changed sessions; a first run after upgrading backfills every session. Codex, Claude Code, Cursor and dsh adapters emit parts natively (`rich`); every other adapter gets them derived from its flat transcript (`derived`), so all 37 tools participate.
+
+Typical agent workflow — "what did I do about X last month, and what went wrong?":
+
+```bash
+agentboard grep "docker compose" --since 1m --by-session          # which sessions, how many hits, of which kinds
+agentboard show codex:019f3d8f                                    # 8 KB outline of a 1500-message session
+agentboard show codex:019f3d8f --parts --errors                   # the failed tool results, one line each
+agentboard show codex:019f3d8f --turn 11 --max-chars 600          # the turn that fixed it, budgeted
+agentboard files -p trader --since 1m                             # which files were touched
+```
 
 Example automation — a weekly digest written by a cron job or by another agent:
 
@@ -127,7 +163,7 @@ Served by the dashboard process, same engine and filter grammar:
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/sessions?tool=a,b&project=x&q=text&range=7d\|since=..&until=..&page=1&limit=50&order=desc` | paged session summaries |
-| `GET /api/sessions/{key}` | summary + full transcript (`?transcript=0` to skip loading it) |
+| `GET /api/sessions/{key}` | summary + transcript (`?transcript=0` metadata only, `?view=parts` typed parts, `?view=outline` per-turn outline) |
 | `GET /api/projects`, `GET /api/tools`, `GET /api/days` | aggregates (same filters); `days` items carry `sessionCount`, `messageCount`, `userMessageCount`, `byTool` |
 | `GET /api/heatmap?weeks=52&tool=..&project=..&q=..` | dense per-day series for the heatmap (`userMessageCount` = human turns), zeros included |
 | `GET /api/summary?period=week&anchor=2026-09-01&format=json\|md` | period digest |
@@ -157,10 +193,12 @@ All optional. Each adapter also honours the tool's own environment variable when
 ```
 src/engine/
   types.ts            normalized model: SessionSummary / SessionDetail / Message, SourceAdapter, Strategy
-  adapters/*.ts       one adapter per tool: detect() → scan() → load()
+  parts/              Part model: types, injected-context classifier + tool-category mapping, messages⇄parts, turns/outline
+  adapters/*.ts       one adapter per tool: detect() → scan() → load(); codex/claude-code/cursor/deepseek-harness emit parts directly
   webchat/            ChatGPT / Claude.ai export parsers, Open WebUI API, reserved BrowserChatProvider
   index/store.ts      SQLite index (~/.agentboard/index.db): summaries, prompts for search, scan state
-  indexer.ts          runs adapters, skips unchanged files by (mtime, size), reconciles deleted sources
+  index/parts-store.ts  parts + FTS5 (trigram) for cross-session / in-session retrieval, files touched
+  indexer.ts          runs adapters, skips unchanged files by (mtime, size), reconciles deleted sources, indexes parts
   summary.ts          day/week/month digests + Markdown rendering
   engine.ts           the facade both the CLI and the API routes call
 src/cli/              commander-based CLI
@@ -168,7 +206,7 @@ src/app/              Next.js dashboard + /api routes
 scripts/demo-data.ts  synthetic fixtures for every format
 ```
 
-Only session summaries are stored in the index; transcripts are re-read from the tool's own store when you open a session, so the index stays small and never diverges from the source of truth. Locked SQLite databases (an IDE that is running) are copied to a temp file before reading.
+The index holds session summaries plus the typed parts of each transcript (tool output capped at 16k chars per part); the dashboard's transcript view still re-reads the tool's own store when you open a session, so it never diverges from the source of truth. Locked SQLite databases (an IDE that is running) are copied to a temp file before reading.
 
 ## Development
 

@@ -1,4 +1,4 @@
-import type { SessionDetail, SessionSummary } from "../engine/types";
+import type { SessionSummary } from "../engine/types";
 import { TOOL_META } from "../engine/registry";
 import { formatDuration } from "../engine/util/time";
 
@@ -36,30 +36,4 @@ export function sessionRows(items: SessionSummary[]): string[][] {
   ]);
 }
 
-export const SESSION_HEADER = ["started", "tool", "project", "title", "msgs", "dur", "key"];
-
-export function detailToMarkdown(d: SessionDetail, opts: { maxChars?: number } = {}): string {
-  const max = opts.maxChars ?? 4000;
-  const lines: string[] = [];
-  lines.push(`# ${d.title}`, "");
-  lines.push(`- Tool: ${TOOL_META[d.tool]?.name ?? d.tool} (${d.surface})`);
-  lines.push(`- Project: ${d.project.path}`);
-  lines.push(`- Time: ${fmtTime(d.startedAt)} → ${fmtTime(d.endedAt)} (${formatDuration(d.startedAt, d.endedAt) || "<1m"})`);
-  if (d.model) lines.push(`- Model: ${d.model}`);
-  if (d.gitBranch) lines.push(`- Branch: ${d.gitBranch}`);
-  lines.push(`- Key: \`${d.key}\``);
-  lines.push(`- Source: ${d.source.kind} ${d.source.path}${d.source.locator ? ` (${d.source.locator})` : ""}`, "");
-  lines.push("---", "");
-  for (const m of d.messages) {
-    const who = m.role === "user" ? "User" : m.role === "assistant" ? "Assistant" : m.role === "tool" ? "Tool output" : "System";
-    const ts = m.timestamp ? ` · ${fmtTime(m.timestamp)}` : "";
-    lines.push(`### ${who}${ts}`, "");
-    if (m.toolCalls?.length) {
-      for (const t of m.toolCalls) lines.push(`- 🔧 \`${t.name}\`${t.summary ? ` — ${t.summary}` : ""}`);
-      lines.push("");
-    }
-    const text = m.text.length > max ? m.text.slice(0, max) + `\n…(${m.text.length - max} more chars)` : m.text;
-    if (text.trim()) lines.push(m.role === "tool" ? "```\n" + text + "\n```" : text, "");
-  }
-  return lines.join("\n");
-}
+export const SESSION_HEADER = ["started", "tool", "project", "title", "turns/calls", "dur", "key"];

@@ -36,8 +36,9 @@ export async function scanFiles(
       if (!parsed) continue;
       const list = Array.isArray(parsed) ? parsed : [parsed];
       for (const d of list) {
-        if (d.messageCount === 0) continue;
+        if (d.messageCount === 0 && !d.parts.length) continue;
         result.sessions.push(stripDetail(d));
+        ctx.onSession?.(d);
       }
     } catch (err) {
       result.warnings.push(`${file}: ${(err as Error).message}`);

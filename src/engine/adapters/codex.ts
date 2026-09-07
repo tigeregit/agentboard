@@ -1,10 +1,12 @@
 import path from "node:path";
 import fs from "node:fs";
-import type { Message, SessionDetail, SourceAdapter, ToolId } from "../types";
+import type { SessionDetail, SourceAdapter, ToolId } from "../types";
+import { PartList } from "../parts/derive";
+import { parseArgs, splitInjected } from "../parts/classify";
 import { readJsonl } from "../util/jsonl";
 import { expand, projectFromPath, walk } from "../util/paths";
 import { buildSession } from "../util/session";
-import { cleanPrompt, extractText, isRecord, normalizeRole, str, summarizeToolInput } from "../util/text";
+import { extractText, isRecord, normalizeRole, str } from "../util/text";
 import { toIso } from "../util/time";
 import { detection, fileSource, scanFiles } from "./_shared";
 
@@ -22,23 +24,33 @@ function rolloutFiles(): string[] {
   return out;
 }
 
-const INJECTED_PREFIXES = ["<environment_context>", "<user_instructions>", "<permissions instructions>", "# AGENTS.md", "<turn_aborted>"];
-
-function isInjected(text: string): boolean {
-  const t = text.trimStart();
-  return INJECTED_PREFIXES.some((p) => t.startsWith(p));
+/**
+ * Codex wraps tool output in a small header:
+ *   Chunk ID: …\nWall time: …\nProcess exited with code N\nOriginal token count: …\nOutput:\n<body>
+ * or for apply_patch: `Exit code: 0\nWall time: …\nOutput:\n<body>`.
+ */
+function unwrapOutput(raw: string): { text: string; exitCode?: number; truncated?: boolean } {
+  const m = raw.match(/^(?:Chunk ID: .*\n)?(?:Wall time: .*\n)?(?:(?:Process exited with code|Exit code:?) (-?\d+)\n)?(?:Wall time: .*\n)?(?:Original token count: (\d+)\n)?Output:\n/);
+  if (!m) return { text: raw };
+  const body = raw.slice(m[0].length);
+  const exitCode = m[1] !== undefined ? Number(m[1]) : undefined;
+  return { text: body, exitCode, truncated: /\n\[\.\.\. omitted \d+ of \d+ lines \.\.\.\]/.test(body) || undefined };
 }
 
 /** Parse one Codex-format rollout file; `tool` tags the session (Open Interpreter reuses this format verbatim). */
 export async function parseCodexRollout(file: string, tool: ToolId): Promise<SessionDetail | null> {
   const records = await readJsonl<Rec>(file);
-  const messages: Message[] = [];
+  const list = new PartList();
   let id: string | undefined;
   let cwd: string | undefined;
   let branch: string | undefined;
   let model: string | undefined;
   let started: unknown;
-  let sawEventUserMessages = false;
+  // Prefer the clean `event_msg/user_message` prompts when the file has them; the response_item copy carries injected context too.
+  const hasEventUserMessages = records.some((r) => r.type === "event_msg" && isRecord(r.payload) && r.payload.type === "user_message");
+  const callNames = new Map<string, string>(); // call_id → tool name
+  const callFiles = new Map<string, string[]>(); // call_id → absolute files from patch_apply_end
+  let lastAssistant: ReturnType<PartList["push"]> | undefined;
 
   for (const r of records) {
     const type = str(r.type);
@@ -60,6 +72,7 @@ export async function parseCodexRollout(file: string, tool: ToolId): Promise<Ses
       const git = isRecord(r.git) ? r.git : undefined;
       branch = str(git?.branch) ?? branch;
       cwd = str(r.cwd) ?? cwd;
+      if (typeof r.instructions === "string" && r.instructions.trim()) list.push({ kind: "context", role: "system", form: "system", text: r.instructions, timestamp: ts });
       continue;
     }
     if (type === "turn_context" && payload) {
@@ -67,16 +80,32 @@ export async function parseCodexRollout(file: string, tool: ToolId): Promise<Ses
       model = model ?? str(payload.model);
       continue;
     }
+    if (type === "compacted") {
+      const msg = str(r.message) ?? str(payload?.message) ?? "";
+      const hist = Array.isArray(r.replacement_history) ? r.replacement_history.length : Array.isArray(payload?.replacement_history) ? (payload!.replacement_history as unknown[]).length : 0;
+      list.push({ kind: "compaction", role: "system", text: msg || `context compacted (${hist} replacement messages)`, timestamp: ts });
+      continue;
+    }
     if (type === "event_msg" && payload) {
       const pt = str(payload.type);
       if (pt === "user_message") {
-        const text = cleanPrompt(extractText(payload.message));
-        if (text && !isInjected(text)) {
-          sawEventUserMessages = true;
-          messages.push({ role: "user", text, timestamp: ts });
-        }
+        list.pushUserText(extractText(payload.message), { timestamp: ts });
       } else if (pt === "turn_context") {
         model = model ?? str(payload.model);
+      } else if (pt === "patch_apply_end") {
+        const callId = str(payload.call_id);
+        const changes = isRecord(payload.changes) ? Object.keys(payload.changes) : [];
+        if (callId && changes.length) callFiles.set(callId, changes);
+      } else if (pt === "token_count") {
+        const info = isRecord(payload.info) ? payload.info : undefined;
+        const last = isRecord(info?.last_token_usage) ? info!.last_token_usage : undefined;
+        if (last && lastAssistant) lastAssistant.usage = { input: Number(last.input_tokens) || undefined, output: Number(last.output_tokens) || undefined };
+      } else if (pt === "turn_aborted") {
+        list.push({ kind: "event", role: "system", text: `turn aborted: ${str(payload.reason) ?? "unknown"}`, timestamp: ts });
+      } else if (pt === "agent_reasoning" || pt === "agent_reasoning_delta") {
+        // Codex also logs reasoning summaries as events for some versions.
+        const text = str(payload.text) ?? str(payload.delta);
+        if (text && pt === "agent_reasoning") list.push({ kind: "reasoning", role: "assistant", text, timestamp: ts });
       }
       continue;
     }
@@ -87,24 +116,45 @@ export async function parseCodexRollout(file: string, tool: ToolId): Promise<Ses
       const role = normalizeRole(item.role);
       if (!role) continue;
       const text = extractText(item.content);
-      if (role === "user") {
-        if (sawEventUserMessages) continue; // event_msg already captured the clean prompt
-        const cleaned = cleanPrompt(text);
-        if (!cleaned || isInjected(cleaned)) continue;
-        messages.push({ role, text: cleaned, timestamp: ts });
+      if (!text.trim()) continue;
+      if (role === "system") {
+        list.push({ kind: "context", role: "system", form: text.includes("<permissions instructions>") ? "instructions" : "system", text, timestamp: ts });
+      } else if (role === "user") {
+        if (hasEventUserMessages) {
+          // Only the injected wrappers are new information here; the prompt itself came from event_msg.
+          const { context } = splitInjected(text);
+          for (const c of context) list.push({ kind: "context", role: "user", form: c.form, text: c.text, timestamp: ts });
+        } else {
+          list.pushUserText(text, { timestamp: ts });
+        }
       } else if (role === "assistant") {
-        if (text.trim()) messages.push({ role, text, timestamp: ts, model: str(item.model) });
+        lastAssistant = list.push({ kind: "reply", role: "assistant", text, timestamp: ts, model: str(item.model) });
       }
-    } else if (itemType === "function_call" || itemType === "custom_tool_call" || itemType === "local_shell_call") {
-      const name = str(item.name) ?? (itemType === "local_shell_call" ? "shell" : "tool");
-      const args = item.arguments ?? item.input ?? item.action;
-      messages.push({ role: "assistant", text: "", timestamp: ts, toolCalls: [{ name, summary: summarizeToolInput(name, args) }] });
-    } else if (itemType === "function_call_output" || itemType === "custom_tool_call_output") {
-      const out = extractText(item.output);
-      if (out) messages.push({ role: "tool", text: out.slice(0, 4000), timestamp: ts });
+    } else if (itemType === "reasoning") {
+      const summary = Array.isArray(item.summary) ? extractText(item.summary) : "";
+      const content = Array.isArray(item.content) ? extractText(item.content) : "";
+      const text = [summary, content].filter(Boolean).join("\n");
+      if (text.trim()) list.push({ kind: "reasoning", role: "assistant", text, timestamp: ts });
+    } else if (itemType === "function_call" || itemType === "custom_tool_call" || itemType === "local_shell_call" || itemType === "tool_search_call" || itemType === "web_search_call") {
+      const name = str(item.name) ?? (itemType === "local_shell_call" ? "shell" : itemType === "tool_search_call" ? "tool_search" : itemType === "web_search_call" ? "web_search" : "tool");
+      const args = parseArgs(item.arguments ?? item.input ?? item.action);
+      const callId = str(item.call_id) ?? str(item.id);
+      if (callId) callNames.set(callId, name);
+      lastAssistant = list.pushToolCall(name, args, { callId, timestamp: ts });
+    } else if (itemType === "function_call_output" || itemType === "custom_tool_call_output" || itemType === "tool_search_output") {
+      const callId = str(item.call_id);
+      const raw = itemType === "tool_search_output" ? JSON.stringify(item.tools ?? item.output ?? "") : extractText(item.output);
+      if (!raw) continue;
+      const { text, exitCode, truncated } = unwrapOutput(raw);
+      list.pushToolResult(text, { callId, exitCode, isError: exitCode !== undefined ? exitCode !== 0 : undefined, truncated, timestamp: ts, name: callId ? callNames.get(callId) : undefined, files: callId ? callFiles.get(callId) : undefined });
     }
   }
-  if (!messages.length) return null;
+  list.linkResults();
+  // Absolute paths from patch_apply_end also enrich the matching edit call.
+  for (const p of list.parts) {
+    if (p.kind === "tool_call" && p.tool?.callId && callFiles.has(p.tool.callId)) p.files = Array.from(new Set([...(p.files ?? []), ...callFiles.get(p.tool.callId)!]));
+  }
+  if (!list.parts.length) return null;
   const base = path.basename(file, ".jsonl");
   const nativeId = id ?? base.replace(/^rollout-/, "");
   return buildSession({
@@ -112,7 +162,7 @@ export async function parseCodexRollout(file: string, tool: ToolId): Promise<Ses
     surface: "cli",
     nativeId,
     project: projectFromPath(cwd),
-    messages,
+    parts: list.parts,
     source: fileSource(file),
     startedAt: started,
     model,

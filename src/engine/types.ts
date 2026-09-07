@@ -2,6 +2,9 @@
  * Normalized data model shared by every source adapter, the index store,
  * the CLI and the dashboard.
  */
+import type { Part } from "./parts/types";
+
+export type { Part } from "./parts/types";
 
 export type ToolId =
   | "claude-code"
@@ -112,6 +115,13 @@ export interface SessionSummary {
 
 export interface SessionDetail extends SessionSummary {
   messages: Message[];
+  /**
+   * Typed parts (see `parts/types.ts`). Adapters that parse rich sources set
+   * this directly; otherwise `buildSession` derives it from `messages`.
+   */
+  parts: Part[];
+  /** True when the adapter emitted parts itself (rich fidelity) rather than having them derived from `messages`. */
+  richParts?: boolean;
 }
 
 /** One way an adapter can obtain data. Listed in order of preference. */
@@ -142,6 +152,12 @@ export interface ScanContext {
   log?(message: string): void;
   /** Per-scan scratch space shared by adapters that read the same store. */
   memo?: Map<string, unknown>;
+  /**
+   * Called with every freshly parsed session (full detail) so the indexer can
+   * store its parts without re-reading the source. Adapters that cannot call
+   * it are covered by a `load()` fallback.
+   */
+  onSession?(detail: SessionDetail): void;
 }
 
 export interface ScanResult {

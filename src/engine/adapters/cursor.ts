@@ -1,11 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Message, ScanContext, ScanResult, SessionDetail, SessionSummary, SourceAdapter } from "../types";
+import type { Message, Part, ScanContext, ScanResult, SessionDetail, SessionSummary, SourceAdapter } from "../types";
+import { parseArgs } from "../parts/classify";
+import { PartList, pushContentBlocks } from "../parts/derive";
 import { readJsonSafe, readJsonl } from "../util/jsonl";
 import { appDataRoots, decodeDashedCwd, expand, listDirs, projectFromPath, statSafe, walk } from "../util/paths";
 import { buildSession, stripDetail } from "../util/session";
-import { cleanPrompt, extractText, extractToolCalls, isRecord, normalizeRole, str, summarizeToolInput } from "../util/text";
+import { cleanPrompt, extractText, extractToolCalls, isRecord, normalizeRole, str } from "../util/text";
 import { toIso } from "../util/time";
 import { openSqliteReadOnly, type SqliteDb } from "../util/sqlite";
 import { detection, fileSource, scanFiles, sqliteSource } from "./_shared";
@@ -94,7 +96,8 @@ function parseCliStore(dbPath: string): SessionDetail | null {
   const meta = readJsonSafe<Rec>(path.join(dir, "meta.json")) ?? {};
   const db = openSqliteReadOnly(dbPath);
   if (!db) return null;
-  const messages: Message[] = [];
+  const list = new PartList();
+  const names = new Map<string, string>();
   let agentMeta: Rec = {};
   try {
     if (!db.tables().includes("blobs")) return null;
@@ -104,30 +107,13 @@ function parseCliStore(dbPath: string): SessionDetail | null {
       if (!obj) continue;
       const role = normalizeRole(obj.role);
       if (!role) continue;
-      const content = obj.content;
-      const text = extractText(content);
-      const toolCalls = extractToolCalls(content);
-      if (Array.isArray(content)) {
-        for (const part of content as Rec[]) {
-          if (isRecord(part) && (part.type === "tool-call" || part.type === "tool_call")) {
-            const name = str(part.toolName) ?? str(part.name) ?? "tool";
-            toolCalls.push({ name, summary: summarizeToolInput(name, part.args ?? part.input) });
-          }
-        }
-      }
-      if (role === "user") {
-        const cleaned = cleanPrompt(text);
-        if (cleaned) messages.push({ role, text: cleaned });
-      } else if (role === "assistant") {
-        if (text.trim() || toolCalls.length) messages.push({ role, text, toolCalls: toolCalls.length ? toolCalls : undefined, model: str(obj.model) });
-      } else if (role === "tool" && text) {
-        messages.push({ role, text: text.slice(0, 4000) });
-      }
+      pushContentBlocks(list, role, obj.content, { model: str(obj.model), timestamp: toIso(obj.timestamp ?? obj.createdAt) }, names);
     }
+    list.linkResults();
   } finally {
     db.close();
   }
-  if (!messages.length) return null;
+  if (!list.parts.length) return null;
   const id = path.basename(dir);
   const cwd = str(meta.cwd) ?? str(meta.workspaceDir) ?? str(meta.workspacePath) ?? str(agentMeta.cwd) ?? str(agentMeta.workspaceDir) ?? str(agentMeta.workspacePath);
   return buildSession({
@@ -136,7 +122,7 @@ function parseCliStore(dbPath: string): SessionDetail | null {
     nativeId: id,
     title: str(meta.title) ?? str(meta.name) ?? str(agentMeta.name) ?? str(agentMeta.title),
     project: projectFromPath(cwd ?? `cursor-workspace/${path.basename(path.dirname(dir))}`),
-    messages,
+    parts: list.parts,
     source: sqliteSource(dbPath),
     startedAt: meta.createdAtMs ?? meta.createdAt ?? agentMeta.createdAt,
     endedAt: meta.updatedAtMs ?? meta.updatedAt ?? agentMeta.updatedAt,
@@ -231,23 +217,65 @@ function workspaceIndex(user: string): Map<string, WorkspaceInfo> {
   return out;
 }
 
-function bubbleToMessage(b: Rec): Message | null {
-  const type = b.type;
-  const role = type === 1 || type === "user" ? "user" : "assistant";
-  const text = str(b.text) ?? str(b.rawText) ?? extractText(b.richText) ?? "";
-  const toolCalls: Message["toolCalls"] = [];
-  const tool = isRecord(b.toolFormerData) ? b.toolFormerData : undefined;
-  if (tool) {
-    const name = str(tool.name) ?? str(tool.tool) ?? "tool";
-    toolCalls.push({ name, summary: summarizeToolInput(name, tool.rawArgs ?? tool.params ?? tool.args) });
+/** Cursor tool results are JSON strings like {output, rejected} / {contents} / {diff}; pull the human-readable body out. */
+function cursorResultText(raw: unknown): { text: string; rejected?: boolean } {
+  const v = parseArgs(raw);
+  if (typeof v === "string") return { text: v };
+  if (!isRecord(v)) return { text: v === undefined || v === null ? "" : JSON.stringify(v) };
+  const rejected = v.rejected === true || undefined;
+  for (const k of ["output", "stdout", "contents", "content", "result", "text", "diff", "message"]) {
+    const x = v[k];
+    if (typeof x === "string") return { text: x + (typeof v.stderr === "string" && v.stderr ? "\n[stderr]\n" + v.stderr : ""), rejected };
+    if (isRecord(x) && typeof x.text === "string") return { text: x.text, rejected };
   }
-  const modelInfo = isRecord(b.modelInfo) ? b.modelInfo : undefined;
-  if (role === "user") {
-    const cleaned = cleanPrompt(text);
-    return cleaned ? { role, text: cleaned, timestamp: toIso(b.timestamp ?? b.createdAt) } : null;
+  const json = JSON.stringify(v);
+  return { text: json.length > 20_000 ? json.slice(0, 20_000) : json, rejected };
+}
+
+/** IDE bubbles (one row per streamed message/tool step) → typed parts. */
+function bubblesToParts(bubbles: Rec[]): Part[] {
+  const list = new PartList();
+  let lastAssistant: Part | undefined;
+  for (const b of bubbles) {
+    const type = b.type;
+    const role = type === 1 || type === "user" ? "user" : "assistant";
+    const ts = toIso(b.timestamp ?? b.createdAt);
+    const modelInfo = isRecord(b.modelInfo) ? b.modelInfo : undefined;
+    const model = str(modelInfo?.modelName);
+    const text = str(b.text) ?? str(b.rawText) ?? extractText(b.richText) ?? "";
+    if (role === "user") {
+      // Attached files / selections ride along on the user bubble.
+      const ctx = isRecord(b.context) ? b.context : undefined;
+      const sel = Array.isArray(ctx?.fileSelections) ? (ctx!.fileSelections as Rec[]) : [];
+      const files = sel.map((x) => str(x.uri) ?? str((isRecord(x.uri) ? x.uri : {}).fsPath) ?? str(x.path)).filter((x): x is string => !!x);
+      if (files.length) list.push({ kind: "context", role: "user", form: "attachment", text: files.join("\n"), files, timestamp: ts });
+      if (text.trim()) list.pushUserText(text, { timestamp: ts });
+      continue;
+    }
+    const thinking = isRecord(b.thinking) ? str(b.thinking.text) : undefined;
+    if (thinking?.trim()) list.push({ kind: "reasoning", role: "assistant", text: thinking, timestamp: ts, model });
+    const tool = isRecord(b.toolFormerData) ? b.toolFormerData : undefined;
+    if (tool) {
+      const name = str(tool.name) ?? str(tool.tool) ?? "tool";
+      const rawArgs = str(tool.rawArgs) || tool.params || tool.args;
+      const callId = str(tool.toolCallId) ?? str(tool.modelCallId) ?? undefined;
+      const call = list.pushToolCall(name, parseArgs(rawArgs), { callId, timestamp: ts, model });
+      lastAssistant = call;
+      const status = str(tool.status);
+      const err = tool.error !== undefined && tool.error !== null && tool.error !== "" ? tool.error : undefined;
+      if (tool.result !== undefined || err !== undefined || status === "error" || status === "rejected" || str(tool.userDecision) === "rejected") {
+        const { text: out, rejected } = cursorResultText(tool.result);
+        const errText = err !== undefined ? (typeof err === "string" ? err : JSON.stringify(err)) : "";
+        const body = [rejected || str(tool.userDecision) === "rejected" ? "[rejected by user]" : "", out, errText ? "[error] " + errText : ""].filter(Boolean).join("\n");
+        if (body) list.pushToolResult(body, { callId, isError: err !== undefined || status === "error" || rejected || str(tool.userDecision) === "rejected" ? true : undefined, timestamp: ts, name, files: call.files });
+      }
+    }
+    if (text.trim()) lastAssistant = list.push({ kind: "reply", role: "assistant", text, timestamp: ts, model });
+    const tc = isRecord(b.tokenCount) ? b.tokenCount : undefined;
+    if (tc && lastAssistant && (Number(tc.inputTokens) || Number(tc.outputTokens))) lastAssistant.usage = { input: Number(tc.inputTokens) || undefined, output: Number(tc.outputTokens) || undefined };
   }
-  if (!text.trim() && !toolCalls.length) return null;
-  return { role, text, timestamp: toIso(b.timestamp ?? b.createdAt), model: str(modelInfo?.modelName), toolCalls: toolCalls.length ? toolCalls : undefined };
+  list.linkResults();
+  return list.parts;
 }
 
 function readGlobalComposers(user: string, dbPath: string, onlyId?: string): SessionDetail[] {
@@ -287,8 +315,8 @@ function readGlobalComposers(user: string, dbPath: string, onlyId?: string): Ses
           if (parsed) bubbles.push(parsed);
         }
       }
-      const messages = bubbles.map(bubbleToMessage).filter((m): m is Message => !!m);
-      if (!messages.length) continue;
+      const parts = bubblesToParts(bubbles);
+      if (!parts.length) continue;
       const projectDir = bubbles.map((b) => str(b.workspaceProjectDir)).find(Boolean) ?? folderForComposer(composerId);
       out.push(
         buildSession({
@@ -297,7 +325,7 @@ function readGlobalComposers(user: string, dbPath: string, onlyId?: string): Ses
           nativeId: composerId,
           title: str(composer.name),
           project: projectFromPath(projectDir),
-          messages,
+          parts,
           source: sqliteSource(dbPath, composerId),
           startedAt: composer.createdAt,
           endedAt: composer.lastUpdatedAt,
@@ -323,8 +351,8 @@ function readLegacyWorkspaceChats(wsDir: string, folder: string | undefined, dbP
     const tabs = Array.isArray(data?.tabs) ? (data!.tabs as Rec[]) : [];
     for (const tab of tabs) {
       const bubbles = Array.isArray(tab.bubbles) ? (tab.bubbles as Rec[]) : [];
-      const messages = bubbles.map(bubbleToMessage).filter((m): m is Message => !!m);
-      if (!messages.length) continue;
+      const parts = bubblesToParts(bubbles);
+      if (!parts.length) continue;
       const id = str(tab.tabId) ?? `${path.basename(wsDir)}-${out.length}`;
       out.push(
         buildSession({
@@ -333,7 +361,7 @@ function readLegacyWorkspaceChats(wsDir: string, folder: string | undefined, dbP
           nativeId: id,
           title: str(tab.chatTitle),
           project: projectFromPath(folder),
-          messages,
+          parts,
           source: sqliteSource(dbPath, id),
           endedAt: tab.lastSendTime,
           fallbackTime: fs.statSync(dbPath).mtimeMs,
@@ -344,6 +372,20 @@ function readLegacyWorkspaceChats(wsDir: string, folder: string | undefined, dbP
     db.close();
   }
   return out;
+}
+
+/** Composer ids present in the IDE store (cheap key scan; no blob decoding). */
+function ideComposerIds(globalDb: string): string[] {
+  const db = openSqliteReadOnly(globalDb);
+  if (!db) return [];
+  try {
+    if (!db.tables().includes("cursorDiskKV")) return [];
+    return db.all<{ key: string }>("select key from cursorDiskKV where key like 'composerData:%'").map((r) => r.key.slice("composerData:".length));
+  } catch {
+    return [];
+  } finally {
+    db.close();
+  }
 }
 
 function scanIde(ctx: ScanContext): ScanResult {
@@ -358,7 +400,10 @@ function scanIde(ctx: ScanContext): ScanResult {
       result.seen.push({ path: globalDb, mtimeMs: mtime, size });
       if (ctx.full || !ctx.isFresh(globalDb, mtime, size)) {
         try {
-          for (const d of readGlobalComposers(user, globalDb)) result.sessions.push(stripDetail(d));
+          for (const d of readGlobalComposers(user, globalDb)) {
+            result.sessions.push(stripDetail(d));
+            ctx.onSession?.(d);
+          }
         } catch (err) {
           result.warnings.push(`${globalDb}: ${(err as Error).message}`);
         }
@@ -372,7 +417,10 @@ function scanIde(ctx: ScanContext): ScanResult {
       result.seen.push({ path: dbPath, mtimeMs: stat.mtimeMs, size: stat.size });
       if (!ctx.full && ctx.isFresh(dbPath, stat.mtimeMs, stat.size)) continue;
       try {
-        for (const d of readLegacyWorkspaceChats(wsDir, info.folder, dbPath)) result.sessions.push(stripDetail(d));
+        for (const d of readLegacyWorkspaceChats(wsDir, info.folder, dbPath)) {
+          result.sessions.push(stripDetail(d));
+          ctx.onSession?.(d);
+        }
       } catch (err) {
         result.warnings.push(`${dbPath}: ${(err as Error).message}`);
       }
@@ -407,7 +455,9 @@ export const cursor: SourceAdapter = {
     result.sessions.push(...storeScan.sessions);
     result.seen.push(...storeScan.seen);
     result.warnings.push(...storeScan.warnings);
+    // Transcripts are the lossy fallback: skip ids that exist in a CLI store.db or as an IDE composer.
     const storeIds = new Set(stores.map((s) => path.basename(path.dirname(s))));
+    for (const user of ideUserRoots()) for (const id of ideComposerIds(path.join(user, "globalStorage", "state.vscdb"))) storeIds.add(id);
     const transcripts = transcriptFiles().filter((f) => !storeIds.has(path.basename(f, ".jsonl")));
     const tScan = await scanFiles(transcripts, ctx, parseTranscript);
     result.sessions.push(...tScan.sessions);

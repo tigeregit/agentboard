@@ -5,12 +5,17 @@ import { Command, Option } from "commander";
 import { Engine } from "../engine/engine";
 import { isToolId, TOOL_IDS, TOOL_META } from "../engine/registry";
 import { summaryToMarkdown, type Period } from "../engine/summary";
-import type { SessionQuery, ToolId } from "../engine/types";
+import { PART_KINDS, TOOL_CATEGORIES, type PartQuery } from "../engine/parts/types";
+import type { SessionQuery, SessionSummary, ToolId } from "../engine/types";
 import { parseLooseDate } from "../engine/util/time";
 import { parseChatGptExport, parseClaudeExport, parseMarkdownTranscript } from "../engine/webchat/exports";
 import { writeImported } from "../engine/webchat/imported";
-import { detailToMarkdown, fmtTime, SESSION_HEADER, sessionRows, table, truncate } from "./format";
+import { fmtTime, SESSION_HEADER, sessionRows, table, truncate } from "./format";
+import { dumpParts, filesTable, hitsBySession, hitsTable, outlineToText, partsTable, sessionHeader } from "./parts-format";
 import { currentStatus, DEFAULT_HOST, DEFAULT_PORT, serveForeground, startDaemon, stopDaemon, type ServeOptions, type StatusResult } from "./server";
+
+// node:sqlite prints an ExperimentalWarning on stderr; agents often merge stderr into stdout and it lands inside JSON output.
+process.removeAllListeners("warning");
 
 const program = new Command();
 
@@ -57,7 +62,7 @@ interface FilterOpts {
 }
 
 function toQuery(o: FilterOpts): SessionQuery {
-  return { tools: parseTools(o.tool), project: o.project, since: parseLooseDate(o.since), until: parseLooseDate(o.until), search: o.search, surface: o.surface };
+  return { tools: parseTools(o.tool), project: o.project, since: dateOpt(o.since, "since"), until: dateOpt(o.until, "until"), search: o.search, surface: o.surface };
 }
 
 async function withEngine<T>(fn: (engine: Engine) => Promise<T>, opts: { autoScan?: boolean; tools?: ToolId[] } = {}): Promise<T> {
@@ -108,24 +113,87 @@ program
     await withEngine(async (engine) => {
       const reports = await engine.scan({ tools: parseTools(o.tool), full: o.full, log: o.quiet || o.json ? undefined : (m) => console.error(m) });
       if (o.json) return json(reports);
-      const rows = reports.map((r) => [r.tool, String(r.upserted), String(r.removed), `${r.durationMs}ms`, r.error ? `ERROR ${r.error}` : r.warnings.length ? `${r.warnings.length} warnings` : "ok"]);
-      console.log(table(rows, ["tool", "updated", "removed", "time", "status"]));
+      const rows = reports.map((r) => [r.tool, String(r.upserted), String(r.removed), String(r.partsIndexed), `${r.durationMs}ms`, r.error ? `ERROR ${r.error}` : r.warnings.length ? `${r.warnings.length} warnings` : "ok"]);
+      console.log(table(rows, ["tool", "updated", "removed", "parts", "time", "status"]));
       const c = engine.counts();
-      console.log(`\nIndex: ${c.sessions} sessions · ${c.tools} tools · ${c.projects} projects (${engine.store.file})`);
+      const p = engine.partCounts();
+      console.log(`\nIndex: ${c.sessions} sessions · ${c.tools} tools · ${c.projects} projects · ${p.parts} parts (${engine.store.file})`);
     }, { autoScan: false });
   });
+
+/** Compact session record for machine consumers; `--full` restores the complete summary (incl. promptText). */
+function slimSession(s: SessionSummary) {
+  return {
+    key: s.key,
+    tool: s.tool,
+    project: s.project.name,
+    projectPath: s.project.path,
+    title: s.title,
+    startedAt: s.startedAt,
+    endedAt: s.endedAt,
+    turns: s.userMessageCount,
+    toolCalls: s.toolCallCount,
+    messages: s.messageCount,
+    model: s.model,
+    parentKey: s.parentKey,
+  };
+}
+
+function intOpt(v: string, name: string, min = 0): number {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < min) {
+    console.error(`--${name} must be an integer >= ${min} (got "${v}")`);
+    process.exit(2);
+  }
+  return n;
+}
+
+function dateOpt(v: string | undefined, name: string): string | undefined {
+  if (v === undefined) return undefined;
+  const iso = parseLooseDate(v);
+  if (!iso) {
+    console.error(`--${name}: cannot parse "${v}" (use ISO, YYYY-MM-DD, today, yesterday, or 7d/2w/1m)`);
+    process.exit(2);
+  }
+  return iso;
+}
+
+function listOpt<T extends string>(v: string | undefined, allowed: readonly T[], name: string): T[] | undefined {
+  if (!v) return undefined;
+  const items = v.split(",").map((s) => s.trim()).filter(Boolean);
+  for (const it of items) {
+    if (!allowed.includes(it as T)) {
+      console.error(`--${name}: unknown value "${it}". Allowed: ${allowed.join(", ")}`);
+      process.exit(2);
+    }
+  }
+  return items as T[];
+}
+
+function rangeOpt(v: string | undefined, name: string): [number, number] | undefined {
+  if (v === undefined) return undefined;
+  const m = v.match(/^(\d+)(?::(\d*))?$/);
+  if (!m) {
+    console.error(`--${name}: expected N or A:B (got "${v}")`);
+    process.exit(2);
+  }
+  const a = Number(m[1]);
+  const b = m[2] === undefined ? a : m[2] === "" ? Number.MAX_SAFE_INTEGER : Number(m[2]);
+  return [a, b];
+}
 
 filterOptions(program.command("list").alias("ls").description("list sessions, newest first"))
   .option("-n, --limit <n>", "max rows", "50")
   .option("--offset <n>", "skip rows", "0")
   .option("--asc", "oldest first")
-  .option("--json", "machine-readable output ({ total, items })")
+  .option("--json", "machine-readable output ({ total, items }); compact records unless --full")
+  .option("--full", "with --json: complete session summaries including promptText")
   .option("--keys", "print only session keys, one per line")
-  .action(async (o: FilterOpts & { limit: string; offset: string; asc?: boolean; json?: boolean; keys?: boolean }) => {
-    const q = { ...toQuery(o), limit: Number(o.limit), offset: Number(o.offset), order: o.asc ? ("asc" as const) : ("desc" as const) };
+  .action(async (o: FilterOpts & { limit: string; offset: string; asc?: boolean; json?: boolean; full?: boolean; keys?: boolean }) => {
+    const q = { ...toQuery(o), limit: intOpt(o.limit, "limit", 1), offset: intOpt(o.offset, "offset"), order: o.asc ? ("asc" as const) : ("desc" as const) };
     await withEngine(async (engine) => {
       const { items, total } = engine.list(q);
-      if (o.json) return json({ total, items });
+      if (o.json) return json({ total, items: o.full ? items : items.map(slimSession) });
       if (o.keys) return console.log(items.map((s) => s.key).join("\n"));
       if (!items.length) return console.log("No sessions match. Run `agentboard sources` to check what was detected.");
       console.log(table(sessionRows(items), SESSION_HEADER));
@@ -133,44 +201,165 @@ filterOptions(program.command("list").alias("ls").description("list sessions, ne
     }, { tools: q.tools });
   });
 
-filterOptions(program.command("search <terms...>").description("full-text search over titles, prompts and projects"))
+filterOptions(program.command("search <terms...>").description("find sessions by title / prompts / project (session level; use `grep` for transcript contents)"))
   .option("-n, --limit <n>", "max rows", "50")
-  .option("--json", "machine-readable output")
-  .action(async (terms: string[], o: FilterOpts & { limit: string; json?: boolean }) => {
-    const q = { ...toQuery({ ...o, search: terms.join(" ") }), limit: Number(o.limit) };
+  .option("--json", "machine-readable output (compact records unless --full)")
+  .option("--full", "with --json: complete session summaries")
+  .action(async (terms: string[], o: FilterOpts & { limit: string; json?: boolean; full?: boolean }) => {
+    const q = { ...toQuery({ ...o, search: terms.join(" ") }), limit: intOpt(o.limit, "limit", 1) };
     await withEngine(async (engine) => {
       const { items, total } = engine.list(q);
-      if (o.json) return json({ total, items });
+      if (o.json) return json({ total, items: o.full ? items : items.map(slimSession) });
       if (!items.length) return console.log("No matches.");
       console.log(table(sessionRows(items), SESSION_HEADER));
       if (total > items.length) console.log(`\n${items.length} of ${total} shown`);
     }, { tools: q.tools });
   });
 
-program
-  .command("show <key>")
-  .description("print one session's transcript (key or unique prefix of a native id)")
-  .option("--json", "full session detail as JSON")
-  .option("--max-chars <n>", "truncate each message to n characters (markdown output)", "4000")
-  .option("--summary", "metadata only, no transcript")
-  .action(async (key: string, o: { json?: boolean; maxChars: string; summary?: boolean }) => {
-    await withEngine(async (engine) => {
-      const summary = engine.getSummary(key);
-      if (!summary) {
-        console.error(`no session matches "${key}"`);
-        process.exit(1);
-      }
-      if (o.summary) return o.json ? json(summary) : console.log(detailToMarkdown({ ...summary, messages: [] }));
-      const detail = await engine.getDetail(summary.key);
-      if (!detail) {
+interface PartFilterOpts {
+  kind?: string;
+  category?: string;
+  toolName?: string;
+  file?: string;
+  grep?: string;
+  errors?: boolean;
+}
+
+function partFilterOptions(cmd: Command) {
+  return cmd
+    .option("-k, --kind <kinds>", `comma-separated part kinds: ${PART_KINDS.join(",")}`)
+    .option("-c, --category <cats>", `comma-separated tool categories: ${TOOL_CATEGORIES.join(",")}`)
+    .option("--tool-name <name>", "exact tool name as the agent calls it (Bash, exec_command, edit_file_v2, ...)")
+    .option("--file <text>", "parts touching a file whose path contains text")
+    .option("--errors", "only failed tool results");
+}
+
+partFilterOptions(
+  program
+    .command("show <key>")
+    .description("one session: outline of turns by default; --turn / --seq / --parts / --full for transcript parts")
+    .option("--turn <n|a:b>", "dump every part of these turns")
+    .option("--seq <n|a:b>", "dump parts by sequence number (a: = to the end)")
+    .option("--parts", "table of parts (one row each) instead of a dump; combine with filters")
+    .option("--full", "dump every part (old transcript view, still budget-limited)")
+    .option("--files", "files touched in this session")
+    .option("--summary", "metadata only")
+    .option("--grep <text>", "filter parts whose text contains text")
+    .option("--max-chars <n>", "cap per part when dumping", "2000")
+    .option("--budget <n>", "cap total dump size in chars; prints how to continue", "24000")
+    .option("--json", "machine-readable output"),
+).action(async (key: string, o: PartFilterOpts & { turn?: string; seq?: string; parts?: boolean; full?: boolean; files?: boolean; summary?: boolean; maxChars: string; budget: string; json?: boolean }) => {
+  const kinds = listOpt(o.kind, PART_KINDS, "kind");
+  const categories = listOpt(o.category, TOOL_CATEGORIES, "category");
+  const turns = rangeOpt(o.turn, "turn");
+  const seqs = rangeOpt(o.seq, "seq");
+  const maxChars = intOpt(o.maxChars, "max-chars", 1);
+  const budget = intOpt(o.budget, "budget", 1);
+  const hasFilter = !!(kinds || categories || o.toolName || o.file || o.grep || o.errors);
+  await withEngine(async (engine) => {
+    const summary = engine.getSummary(key);
+    if (!summary) {
+      console.error(`no session matches "${key}"`);
+      process.exit(1);
+    }
+    const children = engine.children(summary.key);
+    if (o.summary) return o.json ? json({ ...slimSession(summary), children: children.map((c) => c.key) }) : console.log(sessionHeader(summary).join("\n"));
+
+    const filter = { kinds, categories, toolName: o.toolName, file: o.file, text: o.grep, onlyErrors: o.errors, turns, seqs };
+    const dumpMode = !!(turns || seqs || o.full || o.parts || hasFilter);
+    if (o.files) {
+      const files = engine.files({ sessionKey: summary.key, file: o.file, limit: 500 });
+      return o.json ? json(files) : console.log(filesTable(files));
+    }
+    if (!dumpMode) {
+      const outline = await engine.outline(summary.key);
+      if (!outline) {
         console.error(`session ${summary.key} is indexed but its source could not be re-read (${summary.source.path})`);
         process.exit(1);
       }
-      const children = engine.children(summary.key);
-      if (o.json) return json({ ...detail, children: children.map((c) => c.key) });
-      console.log(detailToMarkdown(detail, { maxChars: Number(o.maxChars) }));
+      const meta = engine.store.parts.meta(summary.key);
+      if (o.json)
+        return json({
+          ...slimSession(summary),
+          fidelity: meta?.fidelity,
+          children: children.map((c) => c.key),
+          outline: {
+            ...outline,
+            files: outline.files.slice(0, 50),
+            turns: outline.turns.map((t) => ({ ...t, prompt: t.prompt.slice(0, 500), reply: t.reply.slice(0, 500), files: t.files.slice(0, 20), commands: t.commands.slice(0, 10).map((c) => c.slice(0, 200)) })),
+          },
+        });
+      console.log(outlineToText(summary, outline, { fidelity: meta?.fidelity }));
       if (children.length) console.log(`\nSubagents / forks: ${children.map((c) => c.key).join(", ")}`);
-    }, { autoScan: false });
+      return;
+    }
+    const parts = await engine.parts(summary.key, filter);
+    if (o.json) return json({ key: summary.key, total: parts.length, parts: parts.map((p) => ({ ...p, text: o.full ? p.text : p.text.slice(0, maxChars) })) });
+    if (!parts.length) return console.log("No parts match.");
+    if (o.parts) {
+      console.log(partsTable(parts, summary.startedAt));
+      console.log(`\n${parts.length} parts · dump with \`show ${summary.key} --seq a:b\``);
+      return;
+    }
+    console.log(sessionHeader(summary).join("\n"), "");
+    console.log(dumpParts(parts, { maxChars, budget, key: summary.key, dayRef: summary.startedAt }));
+  }, { autoScan: false });
+});
+
+filterOptions(partFilterOptions(program.command("grep <query...>").description("search inside transcripts across sessions: returns matching parts with snippets")))
+  .option("--session <key>", "restrict to one session")
+  .option("--role <role>", "user | assistant | tool | system")
+  .option("-n, --limit <n>", "max hits", "20")
+  .option("--offset <n>", "skip hits", "0")
+  .option("--asc", "oldest first")
+  .option("--by-session", "aggregate hits per session")
+  .option("--width <n>", "snippet width in text mode", "140")
+  .option("--json", "machine-readable output ({ total, hits })")
+  .action(async (query: string[], o: FilterOpts & PartFilterOpts & { session?: string; role?: string; limit: string; offset: string; asc?: boolean; bySession?: boolean; width: string; json?: boolean }) => {
+    const q: PartQuery = {
+      text: query.join(" "),
+      kinds: listOpt(o.kind, PART_KINDS, "kind"),
+      categories: listOpt(o.category, TOOL_CATEGORIES, "category"),
+      toolName: o.toolName,
+      file: o.file,
+      sessionKey: o.session,
+      role: o.role as PartQuery["role"],
+      onlyErrors: o.errors,
+      tools: parseTools(o.tool),
+      project: o.project,
+      since: dateOpt(o.since, "since"),
+      until: dateOpt(o.until, "until"),
+      limit: o.bySession ? 500 : intOpt(o.limit, "limit", 1),
+      offset: intOpt(o.offset, "offset"),
+      order: o.asc ? "asc" : "desc",
+    };
+    await withEngine(async (engine) => {
+      const { hits, total } = engine.grep(q);
+      if (o.json) return json({ total, hits });
+      if (!hits.length) return console.log("No matches.");
+      if (o.bySession) {
+        console.log(hitsBySession(hits));
+        console.log(`\n${total} hits in ${new Set(hits.map((h) => h.sessionKey)).size} sessions${total > hits.length ? ` (first ${hits.length} aggregated)` : ""}`);
+        return;
+      }
+      console.log(hitsTable(hits, intOpt(o.width, "width", 20)));
+      const shown = hits.length;
+      console.log(`\n${shown} of ${total} hits${total > shown ? ` (--offset ${q.offset! + shown} for more, --by-session to aggregate)` : ""} · open one: \`show <session> --seq <seq>\` or \`--turn <turn>\``);
+    }, { tools: q.tools as ToolId[] | undefined });
+  });
+
+filterOptions(program.command("files").description("files touched by agents (edits / reads) across sessions"))
+  .option("--session <key>", "restrict to one session")
+  .option("--file <text>", "path contains text")
+  .option("-n, --limit <n>", "max rows", "50")
+  .option("--json", "machine-readable output")
+  .action(async (o: FilterOpts & { session?: string; file?: string; limit: string; json?: boolean }) => {
+    await withEngine(async (engine) => {
+      const files = engine.files({ tools: parseTools(o.tool), project: o.project, since: dateOpt(o.since, "since"), until: dateOpt(o.until, "until"), sessionKey: o.session, file: o.file, limit: intOpt(o.limit, "limit", 1) });
+      if (o.json) return json(files);
+      if (!files.length) return console.log("No file activity indexed.");
+      console.log(filesTable(files));
+    }, { tools: parseTools(o.tool) });
   });
 
 filterOptions(program.command("projects").description("projects with session counts"))

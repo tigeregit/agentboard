@@ -3,6 +3,7 @@ import type { DayBucket, ProjectStat, SessionQuery, SessionSummary, ToolId, Tool
 import { agentboardHome } from "../util/paths";
 import { localDay } from "../util/time";
 import { openSqlite, type SqliteDb } from "../util/sqlite";
+import { PartsStore } from "./parts-store";
 
 /**
  * Persistent index of session summaries at `~/.agentboard/index.db`.
@@ -109,12 +110,15 @@ function rowToSummary(r: Row): SessionSummary {
 export class IndexStore {
   private db: SqliteDb;
   readonly file: string;
+  /** Typed parts of every session (transcript-level index). */
+  readonly parts: PartsStore;
 
   constructor(file = path.join(agentboardHome(), "index.db")) {
     this.file = file;
     this.db = openSqlite(file);
     this.db.exec("pragma journal_mode = wal; pragma synchronous = normal;");
     this.db.exec(SCHEMA);
+    this.parts = new PartsStore(this.db);
   }
 
   close() {
@@ -165,6 +169,7 @@ export class IndexStore {
       this.db.run("delete from scan_state where tool = ?", tool);
       for (const s of seen) this.db.run("insert or replace into scan_state (tool, path, mtime_ms, size, scanned_at) values (?,?,?,?,?)", tool, s.path, s.mtimeMs, s.size, now);
       const removed = this.db.run(`delete from sessions where tool = ? and source_kind <> 'api' and source_path not in (select path from scan_state where tool = ?)`, tool, tool);
+      if (Number(removed.changes) > 0) this.parts.gc();
       this.db.exec("commit");
       return Number(removed.changes);
     } catch (e) {
@@ -178,7 +183,18 @@ export class IndexStore {
     if (!paths.length) return;
     const placeholders = paths.map(() => "?").join(",");
     const rows = this.db.all<{ key: string }>(`select key from sessions where tool = ? and source_path in (${placeholders})`, tool, ...paths);
-    for (const r of rows) if (!keepKeys.has(r.key)) this.db.run("delete from sessions where key = ?", r.key);
+    for (const r of rows) {
+      if (keepKeys.has(r.key)) continue;
+      this.db.run("delete from sessions where key = ?", r.key);
+      this.parts.deleteSession(r.key);
+    }
+  }
+
+  /** Session keys with a summary but no indexed parts. */
+  keysWithoutParts(tool?: ToolId): string[] {
+    return this.db
+      .all<{ key: string }>(`select key from sessions s where ${tool ? "tool = ? and " : ""}not exists (select 1 from parts_meta m where m.session_key = s.key) order by ended_at desc`, ...(tool ? [tool] : []))
+      .map((r) => r.key);
   }
 
   recordRun(tool: ToolId, startedAt: string, upserted: number, removed: number, warnings: string[]) {

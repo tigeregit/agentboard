@@ -1,5 +1,8 @@
-import type { Detection, SessionDetail, SessionQuery, SessionSummary, SourceAdapter, Strategy, ToolId } from "./types";
+import type { Detection, Part, SessionDetail, SessionQuery, SessionSummary, SourceAdapter, Strategy, ToolId } from "./types";
 import { IndexStore } from "./index/store";
+import type { PartsStore } from "./index/parts-store";
+import { outlineOf } from "./parts/derive";
+import type { PartQuery, SessionOutline } from "./parts/types";
 import { runScan, type ScanOptions, type ScanReport } from "./indexer";
 import { ADAPTERS, adapterFor } from "./registry";
 import { periodRange, summarize, type Period, type PeriodSummary } from "./summary";
@@ -103,6 +106,46 @@ export class Engine {
 
   children(key: string) {
     return this.store.children(key);
+  }
+
+  // ---------- parts (transcript-level retrieval) ----------
+
+  /** Parts of one session from the index; falls back to re-reading the source when the session was never part-indexed. */
+  async parts(key: string, filter: Parameters<PartsStore["partsOf"]>[1] = {}): Promise<Part[]> {
+    const summary = this.store.get(key);
+    if (!summary) return [];
+    if (!this.store.parts.meta(summary.key)) {
+      const d = await this.getDetail(summary.key);
+      if (d) this.store.parts.replaceSession(summary.key, d.parts, d.richParts ? "rich" : "derived");
+    }
+    return this.store.parts.partsOf(summary.key, filter);
+  }
+
+  async outline(key: string): Promise<SessionOutline | null> {
+    const summary = this.store.get(key);
+    if (!summary) return null;
+    const parts = await this.parts(summary.key);
+    return outlineOf(summary.key, parts);
+  }
+
+  grep(q: PartQuery) {
+    if (q.sessionKey) {
+      const s = this.store.get(q.sessionKey);
+      if (s) q = { ...q, sessionKey: s.key };
+    }
+    return this.store.parts.search(q);
+  }
+
+  files(q: Parameters<PartsStore["files"]>[0] = {}) {
+    if (q.sessionKey) {
+      const s = this.store.get(q.sessionKey);
+      if (s) q = { ...q, sessionKey: s.key };
+    }
+    return this.store.parts.files(q);
+  }
+
+  partCounts() {
+    return this.store.parts.counts();
   }
 
   projects(q: SessionQuery = {}) {
