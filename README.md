@@ -41,7 +41,16 @@ Requires Node 22.13+ (uses the built-in `node:sqlite`).
 ```bash
 npm install
 npm run scan          # index every agent found on this machine (~/.agentboard/index.db)
-npm run dev           # dashboard on http://localhost:4817
+npm run dev           # dashboard on http://localhost:4817 (hot reload, for hacking on the UI)
+```
+
+Or run the dashboard from the CLI (the first start builds the production bundle):
+
+```bash
+npm link                                    # once; makes `agentboard` available
+agentboard serve                            # foreground on http://127.0.0.1:4817, Ctrl-C to stop
+agentboard server start                     # same thing as a background service
+agentboard server status | stop | restart   # manage it
 ```
 
 No agents installed? Generate a synthetic home with every supported format:
@@ -60,6 +69,8 @@ AGENTBOARD_FAKE_HOME=/tmp/agentboard-demo-home npm run cli -- list --since 7d
 - **Reports** (`/summary`) — daily / weekly / monthly digest with a ready-to-paste Markdown block and the equivalent CLI command.
 - **Sources** (`/sources`) — what was detected, which strategy is used, probed paths, warnings from the last scan; full rescan button.
 
+The dashboard keeps its own index fresh: every page and API request runs an incremental scan when the last one is older than `AGENTBOARD_AUTO_SCAN_SECONDS` (default 60), and the server process also re-scans on that interval in the background, so new sessions show up without anyone running `agentboard scan`. Incremental scans only re-read files whose size or mtime changed, so this is usually a few milliseconds. The **Rescan** button / `POST /api/scan` remain for forcing a full re-parse.
+
 ## CLI
 
 ```bash
@@ -75,7 +86,15 @@ agentboard projects [--since 30d] [--tool ...] [--json]
 agentboard tools [--json]
 agentboard summary --period day|week|month [--date 2026-09-01] [--tool ...] [--project ...] [--prompts] [--json]
 agentboard import chatgpt|claude-web|markdown <file> [--tool trae] [--project /path] [--title ...]
+
+agentboard serve [-p 4817] [-H 127.0.0.1] [--dev] [--build]      # dashboard in the foreground (blocks)
+agentboard server start [-p] [-H] [--dev] [--build] [--json]      # dashboard as a background service
+agentboard server status [--json]                                 # url, pid, uptime, index state; exit 3 when stopped
+agentboard server stop [--json]
+agentboard server restart [-p] [-H] [--build] [--json]            # keeps previous port/host unless overridden
 ```
+
+`serve` and `server start` run the production build (`next start`); they build it on first use or with `--build`, and `--dev` runs `next dev` instead. The background service records its pid, port and URL in `~/.agentboard/server.json` and appends output to `~/.agentboard/server.log`; `stop` sends SIGTERM to the process group and escalates to SIGKILL after 10 s. `AGENTBOARD_PORT` / `AGENTBOARD_HOST` set the defaults; use `-H 0.0.0.0` to expose the board on the LAN.
 
 Dates accept ISO, `YYYY-MM-DD`, `today`, `yesterday`, or relative `12h`, `7d`, `2w`, `1m`. Every command has `--json` for machine consumption; `list --json` returns `{ total, items }` and session keys look like `claude-code:<uuid>`. Query commands refresh the index first (incremental, usually milliseconds); pass `--no-auto-scan` to skip that, or `--index <file>` to point at another index.
 
@@ -97,8 +116,8 @@ Served by the dashboard process, same engine and filter grammar:
 | `GET /api/heatmap?weeks=52&tool=..&project=..&q=..` | dense per-day series for the heatmap (`userMessageCount` = human turns), zeros included |
 | `GET /api/summary?period=week&anchor=2026-09-01&format=json\|md` | period digest |
 | `GET /api/sources` | detection / strategy matrix |
-| `POST /api/scan` `{ "tools": ["cursor"], "full": false }` | re-index |
-| `GET /api/stats` | totals, last scan, endpoint list |
+| `POST /api/scan` `{ "tools": ["cursor"], "full": false }` | force a re-index now (the board already refreshes itself; use for `full`) |
+| `GET /api/stats` | totals, last scan, `scanning`, `autoScanSeconds`, uptime, endpoint list — also the health probe used by `agentboard server status` |
 
 ## Configuration
 
@@ -108,6 +127,8 @@ All optional. Each adapter also honours the tool's own environment variable when
 | --- | --- |
 | `AGENTBOARD_HOME` | where the index lives (default `~/.agentboard`) |
 | `AGENTBOARD_FAKE_HOME` | treat this directory as `$HOME` (demo data, tests) |
+| `AGENTBOARD_AUTO_SCAN_SECONDS` | how stale the index may get before the dashboard re-scans (default `60`, `0` = only on first visit / manual rescan) |
+| `AGENTBOARD_PORT`, `AGENTBOARD_HOST` | defaults for `agentboard serve` / `agentboard server start` (`4817`, `127.0.0.1`) |
 | `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `CURSOR_CONFIG_DIR`, `GROK_HOME`, `PI_SESSIONS_DIR`, `KIMI_CODE_HOME`, `KIMI_HOME`, `DSH_HOME`, `TRAE_TRAJECTORY_DIR`, `AGENTBOARD_TRAE_TRAJECTORY_DIRS`, `WORKBUDDY_DIR`, `CODEBUDDY_DIR`, `MINIMAX_DATA_DIR`, `MAVIS_DATA_DIR`, `ZCODE_DATA_DIR`, `OPENCODE_DB` | override a tool's store location |
 | `OPENCODE_SERVER_URL` | read OpenCode through its HTTP API instead of the database |
 | `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` | enable the Open WebUI adapter |

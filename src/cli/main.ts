@@ -10,6 +10,7 @@ import { parseLooseDate } from "../engine/util/time";
 import { parseChatGptExport, parseClaudeExport, parseMarkdownTranscript } from "../engine/webchat/exports";
 import { writeImported } from "../engine/webchat/imported";
 import { detailToMarkdown, fmtTime, SESSION_HEADER, sessionRows, table, truncate } from "./format";
+import { currentStatus, DEFAULT_HOST, DEFAULT_PORT, serveForeground, startDaemon, stopDaemon, type ServeOptions, type StatusResult } from "./server";
 
 const program = new Command();
 
@@ -250,6 +251,114 @@ program
       }, { autoScan: false });
     }
   });
+
+// ---------- dashboard server ----------
+
+interface ServeOpts {
+  port: string;
+  host: string;
+  dev?: boolean;
+  build?: boolean;
+  json?: boolean;
+}
+
+function serveOptions(o: ServeOpts): ServeOptions {
+  const port = Number(o.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    console.error(`invalid port "${o.port}"`);
+    process.exit(2);
+  }
+  return { port, host: o.host, dev: !!o.dev, build: !!o.build };
+}
+
+function serverFlags(cmd: Command) {
+  return cmd
+    .option("-p, --port <n>", "port to listen on", process.env.AGENTBOARD_PORT || String(DEFAULT_PORT))
+    .option("-H, --host <addr>", "address to bind (0.0.0.0 for LAN access)", process.env.AGENTBOARD_HOST || DEFAULT_HOST)
+    .option("--dev", "run `next dev` instead of the production build")
+    .option("--build", "rebuild the dashboard before starting");
+}
+
+function printStatus(s: StatusResult) {
+  if (!s.state) {
+    console.log("agentboard server: not running");
+    return;
+  }
+  if (!s.running) {
+    console.log(`agentboard server: not running (stale state file for pid ${s.state.pid}, started ${s.state.startedAt}; run \`agentboard server start\`)`);
+    return;
+  }
+  const h = s.health;
+  console.log(`agentboard server: running${h ? "" : " (process alive, HTTP not answering yet)"}`);
+  console.log(table(
+    [
+      ["url", s.state.url],
+      ["pid", String(s.state.pid)],
+      ["mode", s.state.dev ? "dev" : "production"],
+      ["started", fmtTime(s.state.startedAt)],
+      ["uptime", h?.uptimeSeconds !== undefined ? `${Math.floor(h.uptimeSeconds / 3600)}h ${Math.floor((h.uptimeSeconds % 3600) / 60)}m` : "-"],
+      ["index", h?.counts ? `${h.counts.sessions} sessions · ${h.counts.tools} tools · ${h.counts.projects} projects` : "-"],
+      ["last scan", h?.lastScan ? `${fmtTime(h.lastScan)}${h.scanning ? " (scanning now)" : ""}` : "-"],
+      ["auto-refresh", h?.autoScanSeconds !== undefined ? (h.autoScanSeconds > 0 ? `every ${h.autoScanSeconds}s` : "off") : "-"],
+      ["log", s.state.log],
+    ],
+    ["field", "value"],
+  ));
+}
+
+serverFlags(
+  program
+    .command("serve")
+    .description("run the web dashboard in the foreground (blocks until Ctrl-C); the index refreshes itself while it runs"),
+).action(async (o: ServeOpts) => {
+  const code = await serveForeground(serveOptions(o));
+  process.exit(code);
+});
+
+const server = program.command("server").description("manage the dashboard as a background service: start | stop | status | restart");
+
+serverFlags(server.command("start").description("start the dashboard in the background")).option("--json", "machine-readable output").action(async (o: ServeOpts) => {
+  const r = await startDaemon(serveOptions(o));
+  if (o.json) return json({ status: r.status, ...r.state, health: r.health });
+  if (r.status === "already-running") console.log(`already running at ${r.state.url} (pid ${r.state.pid}); use \`agentboard server restart\` to restart`);
+  else console.log(`started at ${r.state.url} (pid ${r.state.pid}, log ${r.state.log})`);
+});
+
+server
+  .command("stop")
+  .description("stop the background dashboard")
+  .option("--json", "machine-readable output")
+  .action(async (o: { json?: boolean }) => {
+    const r = await stopDaemon();
+    if (o.json) return json(r);
+    if (r.status === "not-running") console.log("agentboard server: not running");
+    else console.log(`${r.status === "killed" ? "killed" : "stopped"} pid ${r.state!.pid} (${r.state!.url})`);
+  });
+
+server
+  .command("status")
+  .description("show whether the background dashboard is running, its URL and index state (exit code 0 running / 3 stopped)")
+  .option("--json", "machine-readable output")
+  .action(async (o: { json?: boolean }) => {
+    const s = await currentStatus();
+    if (o.json) json({ running: s.running, stale: s.stale, ...(s.state ?? {}), health: s.health });
+    else printStatus(s);
+    process.exitCode = s.running ? 0 : 3;
+  });
+
+serverFlags(server.command("restart").description("stop (if running) and start again; keeps the previous port/host unless overridden")).option("--json", "machine-readable output").action(async (o: ServeOpts, cmd: Command) => {
+  const prev = await stopDaemon();
+  const opts = serveOptions(o);
+  // Flags not given explicitly inherit the previous run's settings.
+  if (prev.state) {
+    if (cmd.getOptionValueSource("port") === "default") opts.port = prev.state.port;
+    if (cmd.getOptionValueSource("host") === "default") opts.host = prev.state.host;
+    if (cmd.getOptionValueSource("dev") === undefined) opts.dev = prev.state.dev;
+  }
+  const r = await startDaemon(opts);
+  if (o.json) return json({ previous: prev.status, status: r.status, ...r.state, health: r.health });
+  console.log(`${prev.status === "not-running" ? "was not running; " : ""}started at ${r.state.url} (pid ${r.state.pid})`);
+});
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));
