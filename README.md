@@ -26,6 +26,22 @@ Most people now use several agents in parallel: Claude Code for one repo, Cursor
 | WorkBuddy / CodeBuddy Code | `~/.codebuddy/projects/<cwd>/<session>.jsonl` (flat item schema and Claude-shaped legacy files) | none |
 | MiniMax Code (`mcode`) | OpenCode-schema SQLite under `MINIMAX_DATA_DIR` / `~/.minimax` / `~/.local/share/minimax-code`; pre-isolation builds land in OpenCode's DB and are shown there | reserved: ACP |
 | ZCode | `~/.zcode/cli/db/db.sqlite` (OpenCode schema) or legacy `~/.zcode/projects/*.jsonl` | reserved: `zcodex app-server` ACP `session/list` |
+| Gemini CLI | `~/.gemini/tmp/<projectHash>/chats/session-*.jsonl` (+ legacy `.json`), cwd from `.project_root`; subagent sessions skipped | none |
+| Qwen Code | `~/.qwen/projects/<sanitized-cwd>/chats/<id>.jsonl` (`QWEN_RUNTIME_DIR`, `QWEN_HOME`) | none |
+| Antigravity | CLI: `~/.gemini/antigravity-cli/history.jsonl` + `brain/<id>/.system_generated/logs/transcript_full.jsonl`; desktop: `monitor-state.json` + `.token-monitor/rpc-cache` usage records (conversation `.pb` / `.db` blobs are detected, not decoded) | none |
+| Amazon Q CLI / Kiro CLI | `<data_local_dir>/amazon-q/data.sqlite3` `conversations`, `<data_local_dir>/kiro-cli/data.sqlite3` `conversations_v2` (v1 fallback) | none |
+| Aider | `<project>/.aider.chat.history.md`, sessions split on `# aider chat started at …`; projects found one level under `~/{code,src,projects,…}` or `AGENTBOARD_AIDER_DIRS` | none |
+| Cline / Roo Code / Kilo Code | `<host>/User/globalStorage/<extension>/tasks/<id>/ui_messages.json` for VS Code, Insiders, VSCodium, Cursor, Windsurf; task index from `taskHistory.json`, `_index.json` or `state.vscdb` | none |
+| Continue / PearAI | `~/.continue/sessions/<id>.json` (`CONTINUE_GLOBAL_DIR`), `~/.pearai/sessions/` | none |
+| Crush | `<project>/.crush/crush.db` (depth-4 discovery under the same project roots, `AGENTBOARD_CRUSH_DIRS`) | none |
+| ForgeCode | `~/.forge/.forge.db` `conversations` (`FORGE_CONFIG`), both context serialisations | none |
+| Goose | `sessions.db` under `~/.local/share/goose`, `~/Library/Application Support/Block/goose`, `GOOSE_PATH_ROOT` | none |
+| llm CLI | `io.datasette.llm/logs.db` `conversations` + `responses` (`LLM_USER_PATH`) | none |
+| oh-my-pi | `~/.omp/agent/sessions/<cwd>/*.jsonl` (pi format) | none |
+| OpenHands | `~/.openhands/sessions/<sid>/events/*.json` + `metadata.json` | reserved: app-server REST |
+| Open Interpreter | `~/.openinterpreter/sessions/**/rollout-*.jsonl` (Codex format, shared parser) | none |
+| Mistral Vibe | `~/.vibe/logs/session/<dir>/meta.json` + `messages.jsonl` (`VIBE_HOME`) | none |
+| Zed (Agent Panel) | `threads/threads.db` (JSON or zstd blobs) under the Zed data dir | none |
 | ChatGPT (web) | official data export: `agentboard import chatgpt conversations.json` | consumer API: none (Compliance API is enterprise-only) |
 | Claude.ai (web) | official data export: `agentboard import claude-web conversations.json` | none |
 | Open WebUI | **REST API** (`OPENWEBUI_URL` + `OPENWEBUI_API_KEY`) | **implemented** |
@@ -129,7 +145,8 @@ All optional. Each adapter also honours the tool's own environment variable when
 | `AGENTBOARD_FAKE_HOME` | treat this directory as `$HOME` (demo data, tests) |
 | `AGENTBOARD_AUTO_SCAN_SECONDS` | how stale the index may get before the dashboard re-scans (default `60`, `0` = only on first visit / manual rescan) |
 | `AGENTBOARD_PORT`, `AGENTBOARD_HOST` | defaults for `agentboard serve` / `agentboard server start` (`4817`, `127.0.0.1`) |
-| `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `CURSOR_CONFIG_DIR`, `GROK_HOME`, `PI_SESSIONS_DIR`, `KIMI_CODE_HOME`, `KIMI_HOME`, `DSH_HOME`, `TRAE_TRAJECTORY_DIR`, `AGENTBOARD_TRAE_TRAJECTORY_DIRS`, `WORKBUDDY_DIR`, `CODEBUDDY_DIR`, `MINIMAX_DATA_DIR`, `MAVIS_DATA_DIR`, `ZCODE_DATA_DIR`, `OPENCODE_DB` | override a tool's store location |
+| `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `CURSOR_CONFIG_DIR`, `GROK_HOME`, `PI_SESSIONS_DIR`, `KIMI_CODE_HOME`, `KIMI_HOME`, `DSH_HOME`, `TRAE_TRAJECTORY_DIR`, `AGENTBOARD_TRAE_TRAJECTORY_DIRS`, `WORKBUDDY_DIR`, `CODEBUDDY_DIR`, `MINIMAX_DATA_DIR`, `MAVIS_DATA_DIR`, `ZCODE_DATA_DIR`, `OPENCODE_DB`, `GEMINI_HOME`, `QWEN_RUNTIME_DIR`, `QWEN_HOME`, `CONTINUE_GLOBAL_DIR`, `FORGE_CONFIG`, `GOOSE_PATH_ROOT`, `LLM_USER_PATH`, `INTERPRETER_HOME`, `VIBE_HOME` | override a tool's store location |
+| `AGENTBOARD_AIDER_DIRS`, `AGENTBOARD_CRUSH_DIRS` | extra project roots to search for `.aider.chat.history.md` / `.crush/crush.db` (path-delimited) |
 | `OPENCODE_SERVER_URL` | read OpenCode through its HTTP API instead of the database |
 | `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` | enable the Open WebUI adapter |
 | `VSCODE_USER_DIRS` | extra VS Code `User` folders (path-delimited) |

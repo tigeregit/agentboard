@@ -1,7 +1,7 @@
 {
   "name": "agentboard",
   "version": "0.1.0",
-  "description": "Unified dashboard + CLI over the session history of every AI coding agent on your machine (Claude Code, Codex, Cursor, Copilot, OpenCode, Grok Build, pi, Kimi, DeepSeek Harness, Trae, WorkBuddy, MiniMax, ZCode) and web chat exports.",
+  "description": "Unified dashboard + CLI over the session history of every AI coding agent on your machine (Claude Code, Codex, Cursor, Copilot, OpenCode, Grok Build, pi, Kimi, DeepSeek Harness, Trae, WorkBuddy, MiniMax, ZCode, Gemini CLI, Qwen Code, Antigravity, Amazon Q, Kiro, Aider, Cline, Continue, PearAI, Crush, ForgeCode, Goose, llm, oh-my-pi, OpenHands, Open Interpreter, Vibe, Zed) and web chat exports.",
   "private": true,
   "type": "module",
   "bin": {
