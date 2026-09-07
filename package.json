@@ -16,6 +16,8 @@
     "start": "next start -p 4817",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:update": "UPDATE_SNAPSHOTS=1 node --import tsx --test tests/*.test.ts",
     "cli": "tsx src/cli/main.ts",
     "scan": "tsx src/cli/main.ts scan",
     "demo": "tsx scripts/demo-data.ts",

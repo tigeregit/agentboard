@@ -251,6 +251,19 @@ for (let s = 0; s < 6; s++) {
   write(path.join(dir, "events.jsonl"), jsonl(ev));
   write(path.join(dir, "workspace.yaml"), `id: ${id}\ncwd: ${cwd}\ngit_root: ${cwd}\nrepository: feng/${path.basename(cwd)}\nhost_type: ${host}\nbranch: main\nsummary: "${host} · ${rnd(PROMPTS, i).slice(0, 40).replace(/"/g, "'")}"\ncreated_at: ${iso(start)}\nupdated_at: ${iso(start + H)}\n`);
 }
+// Newer Copilot builds drop host_type and record client_name + a user-facing name instead.
+for (const [k, client] of ["github/autopilot", "github/cli"].entries()) {
+  const { i, start, cwd } = next();
+  const id = uuid(`copilot-client${k}`);
+  const dir = ensure(path.join(HOME, ".copilot/session-state", id));
+  const ev: unknown[] = [{ type: "session.start", timestamp: iso(start), data: { sessionId: id, context: { cwd, repository: "feng/" + path.basename(cwd), branch: "main" } } }];
+  for (const t of turns(i, start)) {
+    ev.push({ type: "user.message", timestamp: iso(t.t), data: { content: t.user } });
+    ev.push({ type: "assistant.message", timestamp: iso(t.t + 60e3), data: { content: t.reply } });
+  }
+  write(path.join(dir, "events.jsonl"), jsonl(ev));
+  write(path.join(dir, "workspace.yaml"), `id: ${id}\ncwd: ${cwd}\nclient_name: ${client}\nname: "${client === "github/autopilot" ? "Desktop" : "CLI"} · ${rnd(PROMPTS, i).slice(0, 40).replace(/"/g, "'")}"\ncreated_at: ${iso(start)}\nupdated_at: ${iso(start + H)}\n`);
+}
 {
   const db = openSqlite(path.join(HOME, ".copilot/data.db"));
   db.exec("create table sessions (id text primary key, total_input_tokens integer, created_at text)");
@@ -404,6 +417,32 @@ for (let s = 0; s < 2; s++) {
 }
 ensure(path.join(HOME, ".config/Trae/ModularData/ai-agent"));
 fs.writeFileSync(path.join(HOME, ".config/Trae/ModularData/ai-agent/database.db"), "SQLite format 3\0encrypted-placeholder");
+// Trae IDE per-workspace state.vscdb with icube mementos (chat + Agent/SOLO plan items).
+for (let s = 0; s < 2; s++) {
+  const { i, start, cwd } = next();
+  const wsDir = ensure(path.join(HOME, ".config/Trae/User/workspaceStorage", md5ish("trae" + cwd)));
+  write(path.join(wsDir, "workspace.json"), JSON.stringify({ folder: "file://" + cwd }));
+  const messages: unknown[] = [];
+  for (const [k, t] of turns(i, start).entries()) {
+    messages.push({ role: "user", content: t.user, createdAt: t.t });
+    if (k === 0) {
+      messages.push({
+        role: "ai",
+        content: { data: { summary: t.reply } },
+        createdAt: t.t + 45e3,
+        agentTaskContent: { guideline: { planItems: [{ thought: "Inspect the failing module first.", toolName: "ReadFile", toolParams: { path: "src/main.py" }, result: "print('hi')" }, { thought: "Apply the fix.", toolName: "EditFile", toolParams: { path: "src/main.py" } }] } },
+      });
+    } else {
+      messages.push({ role: "ai", content: t.reply, createdAt: t.t + 45e3 });
+    }
+  }
+  const session = { id: uuid(`trae-ide${i}`), title: rnd(PROMPTS, i).slice(0, 48), createdAt: start, updatedAt: start + 40 * 60e3, messages };
+  const db = openSqlite(path.join(wsDir, "state.vscdb"));
+  db.exec("create table ItemTable (key text unique on conflict replace, value blob)");
+  db.run("insert into ItemTable (key, value) values (?, ?)", s === 0 ? "memento/icube-ai-agent-storage" : "memento/icube-ai-ng-chat-storage-1042", JSON.stringify({ list: [session] }));
+  db.run("insert into ItemTable (key, value) values (?, ?)", "workbench.panel.pinnedPanels", "[]");
+  db.close();
+}
 
 // ---------- WorkBuddy / CodeBuddy Code (flat OpenAI items) ----------
 for (let s = 0; s < 3; s++) {

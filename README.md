@@ -12,7 +12,7 @@ Most people now use several agents in parallel: Claude Code for one repo, Cursor
 | Tool | How it is read today | Native query interface |
 | --- | --- | --- |
 | GitHub Copilot CLI | `~/.copilot/session-state/<id>/events.jsonl` + `workspace.yaml` | reserved: sessions sync to GitHub (`/chronicle`) but there is no public REST surface yet |
-| GitHub Copilot app (desktop) | same store, attributed via `~/.copilot/data.db` `sessions` table | reserved |
+| GitHub Copilot app (desktop) | same store; sessions are attributed by `workspace.yaml` `host_type`, then `client_name` (`github/cli`, `github/autopilot` = desktop app, `github/vscode`), then the `~/.copilot/data.db` `sessions` table | reserved |
 | VS Code Copilot Chat | `User/workspaceStorage/<hash>/chatSessions/*.jsonl` mutation logs (legacy `*.json` too), `globalStorage/emptyWindowChatSessions`, plus VS Code-hosted agent sessions in `~/.copilot` | none; `Chat: Export Session` is manual |
 | OpenCode | **`opencode serve` HTTP API** when `OPENCODE_SERVER_URL` is set; otherwise `~/.local/share/opencode/opencode.db` or legacy `storage/*.json` | **implemented** (`GET /session`, `/session/:id/message`) |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (+ `archived_sessions/`) | reserved: `codex app-server` JSON-RPC `thread/list`, `thread/read` |
@@ -22,7 +22,7 @@ Most people now use several agents in parallel: Claude Code for one repo, Cursor
 | pi coding agent | `~/.pi/agent/sessions/<cwd>/*.jsonl` tree entries, active branch followed | library-only `SessionManager` |
 | Kimi Code / Kimi CLI | **`~/.kimi-code/session_index.jsonl`** to enumerate, then `wire.jsonl` + `state.json`; legacy `~/.kimi/sessions/.../context.jsonl` | **native index implemented** |
 | DeepSeek Harness (`dsh`) | `~/.dsh/sessions/<cwd>/session-<id>/session.jsonl(.zstd)`, zstd decoded in-process (torn frames tolerated) | reserved: `dsh web` is UI-only for now |
-| Trae | `trae-agent` CLI `trajectory_*.json`; Trae IDE's `database.db` is SQLCipher-encrypted (detected, reported, not readable) — use the in-app export + `agentboard import markdown --tool trae` | reserved: SOLO cloud sync has no public API |
+| Trae | Trae IDE / SOLO chats from `User/workspaceStorage/<hash>/state.vscdb` (`ItemTable` icube mementos: `memento/icube-ai-agent-storage`, `ChatStore`, `icube-ai[-ng]-chat-storage-*`; reverse-engineered, best effort); `trae-agent` CLI `trajectory_*.json`. The IDE's `ModularData/ai-agent/database.db` is SQLCipher-encrypted (detected, not readable) — for anything missing use the in-app export + `agentboard import markdown --tool trae` | reserved: SOLO cloud sync has no public API |
 | WorkBuddy / CodeBuddy Code | `~/.codebuddy/projects/<cwd>/<session>.jsonl` (flat item schema and Claude-shaped legacy files) | none |
 | MiniMax Code (`mcode`) | OpenCode-schema SQLite under `MINIMAX_DATA_DIR` / `~/.minimax` / `~/.local/share/minimax-code`; pre-isolation builds land in OpenCode's DB and are shown there | reserved: ACP |
 | ZCode | `~/.zcode/cli/db/db.sqlite` (OpenCode schema) or legacy `~/.zcode/projects/*.jsonl` | reserved: `zcodex app-server` ACP `session/list` |
@@ -111,6 +111,7 @@ All optional. Each adapter also honours the tool's own environment variable when
 | `OPENCODE_SERVER_URL` | read OpenCode through its HTTP API instead of the database |
 | `OPENWEBUI_URL`, `OPENWEBUI_API_KEY` | enable the Open WebUI adapter |
 | `VSCODE_USER_DIRS` | extra VS Code `User` folders (path-delimited) |
+| `AGENTBOARD_TRAE_USER_DIRS` | extra Trae `User` folders containing `workspaceStorage/` (path-delimited) |
 
 ## How it works
 
@@ -134,7 +135,11 @@ Only session summaries are stored in the index; transcripts are re-read from the
 
 ```bash
 npm run typecheck && npm run lint
+npm test              # node:test; every adapter scans the demo dataset in a throwaway $HOME
+npm run test:update   # rewrite tests/adapters.snapshot.json after an intentional parser change
 npm run demo && AGENTBOARD_FAKE_HOME=/tmp/agentboard-demo-home npm run cli -- scan
 ```
 
-Adding a tool means one file in `src/engine/adapters/` implementing `SourceAdapter`, a `ToolId` in `types.ts`, an entry in `tool-meta.ts` and `registry.ts`, and a fixture block in `scripts/demo-data.ts`.
+`tests/adapters.test.ts` runs each adapter against the synthetic stores from `scripts/demo-data.ts` and checks four things per tool: `detect()` finds the fixture, `scan()` yields well-formed sessions (title, user prompt, time bounds, `seen` list, unique keys), the normalized result matches `tests/adapters.snapshot.json`, and `load()` round-trips every session back to the same transcript. It also asserts that no source session is claimed by two tools (the Copilot family shares one store). `tests/trae-vscdb.test.ts` and `tests/copilot-classify.test.ts` cover the reverse-engineered Trae layout and the Copilot host attribution with hand-written fixtures.
+
+Adding a tool means one file in `src/engine/adapters/` implementing `SourceAdapter`, a `ToolId` in `types.ts`, an entry in `tool-meta.ts` and `registry.ts`, a fixture block in `scripts/demo-data.ts`, then `npm run test:update` to record its snapshot.
