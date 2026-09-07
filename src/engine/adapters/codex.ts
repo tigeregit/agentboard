@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import type { Message, SessionDetail, SourceAdapter } from "../types";
+import type { Message, SessionDetail, SourceAdapter, ToolId } from "../types";
 import { readJsonl } from "../util/jsonl";
 import { expand, projectFromPath, walk } from "../util/paths";
 import { buildSession } from "../util/session";
@@ -29,7 +29,8 @@ function isInjected(text: string): boolean {
   return INJECTED_PREFIXES.some((p) => t.startsWith(p));
 }
 
-async function parseFile(file: string): Promise<SessionDetail | null> {
+/** Parse one Codex-format rollout file; `tool` tags the session (Open Interpreter reuses this format verbatim). */
+export async function parseCodexRollout(file: string, tool: ToolId): Promise<SessionDetail | null> {
   const records = await readJsonl<Rec>(file);
   const messages: Message[] = [];
   let id: string | undefined;
@@ -107,7 +108,7 @@ async function parseFile(file: string): Promise<SessionDetail | null> {
   const base = path.basename(file, ".jsonl");
   const nativeId = id ?? base.replace(/^rollout-/, "");
   return buildSession({
-    tool: "codex",
+    tool,
     surface: "cli",
     nativeId,
     project: projectFromPath(cwd),
@@ -118,6 +119,10 @@ async function parseFile(file: string): Promise<SessionDetail | null> {
     gitBranch: branch,
     fallbackTime: fs.statSync(file).mtimeMs,
   });
+}
+
+function parseFile(file: string): Promise<SessionDetail | null> {
+  return parseCodexRollout(file, "codex");
 }
 
 export const codex: SourceAdapter = {
