@@ -89,6 +89,8 @@ The dashboard keeps its own index fresh: every page and API request runs an incr
 
 ## CLI
 
+Per-command guides with example output live in [`docs/cli/`](docs/cli/README.md) (start with [agent-workflows.md](docs/cli/agent-workflows.md) if another agent is the caller).
+
 ```bash
 npm run cli -- <command>        # or: npm link && agentboard <command>
 

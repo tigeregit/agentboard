@@ -263,7 +263,7 @@ partFilterOptions(
       process.exit(1);
     }
     const children = engine.children(summary.key);
-    if (o.summary) return o.json ? json({ ...slimSession(summary), children: children.map((c) => c.key) }) : console.log(sessionHeader(summary).join("\n"));
+    if (o.summary) return o.json ? json({ ...slimSession(summary), source: summary.source, gitBranch: summary.gitBranch, children: children.map((c) => c.key) }) : console.log(sessionHeader(summary).join("\n"));
 
     const filter = { kinds, categories, toolName: o.toolName, file: o.file, text: o.grep, onlyErrors: o.errors, turns, seqs };
     const dumpMode = !!(turns || seqs || o.full || o.parts || hasFilter);
@@ -301,7 +301,7 @@ partFilterOptions(
       console.log(`\n${parts.length} parts · dump with \`show ${summary.key} --seq a:b\``);
       return;
     }
-    console.log(sessionHeader(summary).join("\n"), "");
+    console.log(sessionHeader(summary).join("\n") + "\n");
     console.log(dumpParts(parts, { maxChars, budget, key: summary.key, dayRef: summary.startedAt }));
   }, { autoScan: false });
 });

@@ -34,7 +34,7 @@ export function sessionHeader(s: SessionSummary, o?: SessionOutline, fidelity?: 
   const lines = [`# ${s.title}`, ""];
   lines.push(`- Tool: ${TOOL_META[s.tool]?.name ?? s.tool} (${s.surface}) · Project: ${s.project.path}`);
   lines.push(`- Time: ${fmtTime(s.startedAt)} → ${fmtTime(s.endedAt)} (${formatDuration(s.startedAt, s.endedAt) || "<1m"})${s.model ? ` · Model: ${s.model}` : ""}${s.gitBranch ? ` · Branch: ${s.gitBranch}` : ""}`);
-  lines.push(`- Key: \`${s.key}\``);
+  lines.push(`- Key: \`${s.key}\` · Source: ${s.source.kind} ${s.source.path}${s.source.locator ? ` (${s.source.locator})` : ""}`);
   if (o) {
     const calls = Object.values(o.byCategory).reduce((a, b) => a + (b ?? 0), 0);
     lines.push(`- Parts: ${o.partCount}${fidelity ? ` (${fidelity})` : ""} · Turns: ${o.turns.filter((t) => t.turn > 0).length} · Tool calls: ${calls}${calls ? ` (${categories(o.byCategory)})` : ""} · Errors: ${o.errors} · Files: ${o.files.length}${o.byKind.reasoning ? ` · Reasoning parts: ${o.byKind.reasoning}` : ""}${o.contextParts ? ` · Injected context: ${o.contextParts}` : ""}${o.compactions ? ` · Compactions: ${o.compactions}` : ""}`);
