@@ -29,7 +29,10 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
 
   const { total, items } = engine.list(q);
   const days = engine.days(aggQ);
-  const heatmapDays = engine.days({ ...aggQ, since: heatmapStart(HEATMAP_WEEKS).toISOString(), until: undefined });
+  const heatmapQ = { ...aggQ, since: heatmapStart(HEATMAP_WEEKS).toISOString(), until: undefined };
+  const heatmapDays = engine.days(heatmapQ);
+  const heatmapTools = engine.toolStats(heatmapQ);
+  const heatmapProjects = engine.projects(heatmapQ);
   const toolStats = engine.toolStats({ ...aggQ, tools: undefined });
   const projectStats = engine.projects({ ...aggQ, project: undefined });
   const counts = engine.counts();
@@ -64,13 +67,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
             <StatCard label="Projects" value={projectsInRange} hint={`${counts.projects} all time`} />
           </div>
 
-          <section className="rounded-xl border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-sm font-medium">Interactions</h2>
-              <span className="text-xs text-muted-foreground">human turns per day{filters.tools?.length || filters.project || filters.search ? ", current tool / project / search filter" : ", all tools"}</span>
-            </div>
-            <ActivityHeatmap days={heatmapDays} filters={filters} weeks={HEATMAP_WEEKS} />
-          </section>
+          <ActivityHeatmap days={heatmapDays} tools={heatmapTools} projects={heatmapProjects} filters={filters} weeks={HEATMAP_WEEKS} />
 
           <section className="rounded-xl border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">

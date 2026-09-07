@@ -250,18 +250,18 @@ export class IndexStore {
 
   projects(q: SessionQuery = {}): ProjectStat[] {
     const { sql, params } = this.where(q);
-    const rows = this.db.all<{ project_path: string; project_name: string; n: number; m: number; tools: string; first: string; last: string }>(
-      `select project_path, project_name, count(*) n, sum(message_count) m, group_concat(distinct tool) tools, min(started_at) first, max(ended_at) last
+    const rows = this.db.all<{ project_path: string; project_name: string; n: number; m: number; u: number; tools: string; first: string; last: string }>(
+      `select project_path, project_name, count(*) n, sum(message_count) m, sum(user_count) u, group_concat(distinct tool) tools, min(started_at) first, max(ended_at) last
        from sessions ${sql} group by project_path order by last desc`,
       ...params,
     );
-    return rows.map((r) => ({ path: r.project_path, name: r.project_name, sessionCount: r.n, messageCount: r.m, tools: r.tools.split(",") as ToolId[], firstActivity: r.first, lastActivity: r.last }));
+    return rows.map((r) => ({ path: r.project_path, name: r.project_name, sessionCount: r.n, messageCount: r.m, userMessageCount: r.u ?? 0, tools: r.tools.split(",") as ToolId[], firstActivity: r.first, lastActivity: r.last }));
   }
 
   toolStats(q: SessionQuery = {}): ToolStat[] {
     const { sql, params } = this.where(q);
-    const rows = this.db.all<{ tool: string; n: number; m: number; last: string | null }>(`select tool, count(*) n, sum(message_count) m, max(ended_at) last from sessions ${sql} group by tool order by n desc`, ...params);
-    return rows.map((r) => ({ tool: r.tool as ToolId, sessionCount: r.n, messageCount: r.m, lastActivity: r.last }));
+    const rows = this.db.all<{ tool: string; n: number; m: number; u: number; last: string | null }>(`select tool, count(*) n, sum(message_count) m, sum(user_count) u, max(ended_at) last from sessions ${sql} group by tool order by n desc`, ...params);
+    return rows.map((r) => ({ tool: r.tool as ToolId, sessionCount: r.n, messageCount: r.m, userMessageCount: r.u ?? 0, lastActivity: r.last }));
   }
 
   /** Activity per local day (sessions are bucketed by their last activity). */

@@ -191,6 +191,8 @@ export interface ProjectStat {
   name: string;
   sessionCount: number;
   messageCount: number;
+  /** Human turns summed over the project's sessions. */
+  userMessageCount: number;
   tools: ToolId[];
   firstActivity: string;
   lastActivity: string;
@@ -200,6 +202,8 @@ export interface ToolStat {
   tool: ToolId;
   sessionCount: number;
   messageCount: number;
+  /** Human turns summed over the tool's sessions. */
+  userMessageCount: number;
   lastActivity: string | null;
 }
 
