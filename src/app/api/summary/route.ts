@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
  * GET /api/summary?period=day|week|month&anchor=2026-09-01&tool=...&project=...&format=json|md
  * Period report for automation (daily / weekly digests). Mirrors `agentboard summary`.
  */
-export function GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  await getEngine().ensureFresh();
   const sp = req.nextUrl.searchParams;
   const periodRaw = sp.get("period") ?? "day";
   if (!["day", "week", "month"].includes(periodRaw)) return NextResponse.json({ error: "period must be day|week|month" }, { status: 400 });

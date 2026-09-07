@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
   const engine = getEngine();
+  await engine.ensureFresh();
   const filters = parseFilters(sp, { range: "all" });
   const q = { ...toSessionQuery(filters), limit: undefined, offset: undefined };
   const projects = engine.projects(q);

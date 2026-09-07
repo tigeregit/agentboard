@@ -22,7 +22,9 @@ const STRATEGY_LABEL: Record<string, string> = {
 };
 
 export default async function SourcesPage() {
-  const sources = await getEngine().sources();
+  const engine = getEngine();
+  await engine.ensureFresh();
+  const sources = await engine.sources();
   const local = sources.filter((s) => s.surface !== "web");
   const web = sources.filter((s) => s.surface === "web");
   const detected = sources.filter((s) => s.detection.installed).length;

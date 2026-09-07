@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest, ctx: { params: Promise<{ key: string }> }) {
   const { key } = await ctx.params;
   const engine = getEngine();
+  await engine.ensureFresh();
   const decoded = decodeURIComponent(key);
   const summary = engine.getSummary(decoded);
   if (!summary) return NextResponse.json({ error: "not found", key: decoded }, { status: 404 });

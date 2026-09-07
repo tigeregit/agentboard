@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { IconDatabaseOff, IconFilterOff } from "@tabler/icons-react";
-import { getEngine } from "@/engine/engine";
+import { autoScanIntervalMs, getEngine } from "@/engine/engine";
 import { ActivityChart } from "@/components/dashboard/activity-chart";
 import { ActivityHeatmap, heatmapStart } from "@/components/dashboard/activity-heatmap";
 import { FilterBar } from "@/components/dashboard/filter-bar";
@@ -20,8 +20,8 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const sp = await searchParams;
   const engine = getEngine();
 
-  // First visit on a fresh index: build it right away instead of showing an empty board.
-  if (engine.store.lastRuns().length === 0) await engine.scan();
+  // Builds the index on first visit and re-scans incrementally when it is older than AGENTBOARD_AUTO_SCAN_SECONDS.
+  await engine.ensureFresh();
 
   const filters = parseFilters(sp, { range: "30d", pageSize: 40 });
   const q = toSessionQuery(filters);
@@ -48,6 +48,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
           <h1 className="text-xl font-semibold tracking-tight">Sessions</h1>
           <p className="text-sm text-muted-foreground">
             {compact(counts.sessions)} sessions indexed from {counts.tools} tools · last scan {relTime(lastScan)}
+            {autoScanIntervalMs() > 0 ? ` · auto-refresh every ${Math.round(autoScanIntervalMs() / 1000)}s` : ""}
           </p>
         </div>
       </div>

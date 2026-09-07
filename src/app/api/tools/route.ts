@@ -6,7 +6,8 @@ import { parseFilters, toSessionQuery } from "@/lib/query";
 export const dynamic = "force-dynamic";
 
 /** GET /api/tools?project=...&range=... → per-tool aggregates with display metadata. */
-export function GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  await getEngine().ensureFresh();
   const f = parseFilters(req.nextUrl.searchParams, { range: "all" });
   const q = toSessionQuery(f);
   delete q.limit;

@@ -5,7 +5,8 @@ import { parseFilters, toSessionQuery } from "@/lib/query";
 export const dynamic = "force-dynamic";
 
 /** GET /api/days?range=30d&tool=... → daily activity buckets (local days) for charts / cron reports. */
-export function GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  await getEngine().ensureFresh();
   const f = parseFilters(req.nextUrl.searchParams, { range: "30d" });
   const q = toSessionQuery(f);
   delete q.limit;

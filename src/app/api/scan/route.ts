@@ -4,11 +4,11 @@ import { parseTools } from "@/lib/query";
 
 export const dynamic = "force-dynamic";
 
-let inflight: Promise<unknown> | null = null;
-
 /**
  * POST /api/scan  { tools?: string[] | "a,b", full?: boolean }
- * Re-indexes local agent stores. Concurrent calls share one run.
+ * Forces a re-index now. The dashboard already refreshes itself (see
+ * Engine.ensureFresh), so this is for full rescans and external automation.
+ * Concurrent calls share one run.
  */
 export async function POST(req: NextRequest) {
   let body: { tools?: string[] | string; full?: boolean } = {};
@@ -18,13 +18,7 @@ export async function POST(req: NextRequest) {
     // empty body is fine
   }
   const tools = parseTools(Array.isArray(body.tools) ? body.tools.join(",") : body.tools);
-  if (!inflight) {
-    inflight = getEngine()
-      .scan({ tools, full: !!body.full })
-      .finally(() => {
-        inflight = null;
-      });
-  }
-  const reports = await inflight;
-  return NextResponse.json({ reports, counts: getEngine().counts() });
+  const engine = getEngine();
+  const reports = await engine.scan({ tools, full: !!body.full });
+  return NextResponse.json({ reports, counts: engine.counts(), lastScan: engine.lastScanAt() ?? null });
 }

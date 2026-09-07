@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
  * number of human turns summed over every session that ended that day.
  * Days with no activity are included with zeros so the series is dense.
  */
-export function GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
+  await getEngine().ensureFresh();
   const sp = req.nextUrl.searchParams;
   const weeks = Math.min(260, Math.max(1, Number(sp.get("weeks") ?? 52) || 52));
   const f = parseFilters(sp, { range: "all" });

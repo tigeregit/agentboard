@@ -24,6 +24,7 @@ export interface SourceStatus {
  */
 export class Engine {
   readonly store: IndexStore;
+  private inflight: Promise<ScanReport[]> | null = null;
 
   constructor(indexFile?: string) {
     this.store = new IndexStore(indexFile);
@@ -33,8 +34,47 @@ export class Engine {
     this.store.close();
   }
 
-  scan(opts: ScanOptions = {}): Promise<ScanReport[]> {
-    return runScan(this.store, opts);
+  /**
+   * Re-index. Concurrent callers (several dashboard requests, the auto-refresh
+   * timer, POST /api/scan) share one run; a full or tool-restricted scan
+   * requested while an incremental run is active waits for it and then runs.
+   */
+  async scan(opts: ScanOptions = {}): Promise<ScanReport[]> {
+    const plain = !opts.full && !opts.tools?.length;
+    if (this.inflight) {
+      const current = this.inflight;
+      if (plain) return current;
+      await current.catch(() => undefined);
+    }
+    const run = runScan(this.store, opts).finally(() => {
+      if (this.inflight === run) this.inflight = null;
+    });
+    this.inflight = run;
+    return run;
+  }
+
+  get scanning(): boolean {
+    return this.inflight !== null;
+  }
+
+  /** ISO time of the most recent completed scan of any tool, if the index was ever built. */
+  lastScanAt(): string | undefined {
+    return this.store.lastRuns().map((r) => r.finishedAt).sort().at(-1);
+  }
+
+  /**
+   * Keeps the index current without an external `agentboard scan`: runs an
+   * incremental scan when the last one is older than `maxAgeMs` (or the index
+   * is empty), otherwise returns immediately. Incremental scans only re-read
+   * files whose size/mtime changed, so this is cheap enough to call per request.
+   */
+  async ensureFresh(maxAgeMs = autoScanIntervalMs()): Promise<boolean> {
+    const last = this.lastScanAt();
+    if (last && maxAgeMs <= 0) return false;
+    const age = last ? Date.now() - new Date(last).getTime() : Infinity;
+    if (age < maxAgeMs) return false;
+    await this.scan();
+    return true;
   }
 
   list(q: SessionQuery) {
@@ -118,10 +158,32 @@ export class Engine {
   }
 }
 
-let shared: Engine | null = null;
+/** How stale the index may get before a dashboard request triggers an incremental scan. 0 disables. */
+export function autoScanIntervalMs(): number {
+  const raw = process.env.AGENTBOARD_AUTO_SCAN_SECONDS;
+  if (raw === undefined || raw === "") return 60_000;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n * 1000 : 60_000;
+}
 
-/** Process-wide engine for the Next.js server (one SQLite handle per process). */
+let shared: Engine | null = null;
+let refreshTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Process-wide engine for the Next.js server (one SQLite handle per process).
+ * Also arms a background refresh so the index stays current while the server
+ * runs, even when nobody is looking at the dashboard.
+ */
 export function getEngine(): Engine {
-  if (!shared) shared = new Engine();
+  if (!shared) {
+    shared = new Engine();
+    const every = autoScanIntervalMs();
+    if (every > 0 && !refreshTimer) {
+      refreshTimer = setInterval(() => {
+        shared?.ensureFresh(every).catch(() => undefined);
+      }, every);
+      refreshTimer.unref();
+    }
+  }
   return shared;
 }

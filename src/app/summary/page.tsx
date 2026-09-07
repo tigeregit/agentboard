@@ -42,7 +42,9 @@ export default async function SummaryPage({ searchParams }: { searchParams: Prom
   const tools = parseTools(first(sp.tool));
   const project = first(sp.project) || undefined;
 
-  const summary = getEngine().periodSummary(period, anchor, { tools, project });
+  const engine = getEngine();
+  await engine.ensureFresh();
+  const summary = engine.periodSummary(period, anchor, { tools, project });
   const markdown = summaryToMarkdown(summary, { maxSessions: 100 });
 
   const params = (patch: Record<string, string | undefined>) => {

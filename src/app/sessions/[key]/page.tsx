@@ -26,6 +26,7 @@ export default async function SessionPage({ params }: Props) {
   const { key } = await params;
   const decoded = decodeURIComponent(key);
   const engine = getEngine();
+  await engine.ensureFresh();
   const summary = engine.getSummary(decoded);
   if (!summary) notFound();
 
