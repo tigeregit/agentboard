@@ -2,6 +2,7 @@ import Link from "next/link";
 import { IconDatabaseOff, IconFilterOff } from "@tabler/icons-react";
 import { getEngine } from "@/engine/engine";
 import { ActivityChart } from "@/components/dashboard/activity-chart";
+import { ActivityHeatmap, heatmapStart } from "@/components/dashboard/activity-heatmap";
 import { FilterBar } from "@/components/dashboard/filter-bar";
 import { Pagination } from "@/components/dashboard/pagination";
 import { ScanButton } from "@/components/dashboard/scan-button";
@@ -12,6 +13,8 @@ import { compact, relTime } from "@/lib/format";
 import { href, parseFilters, RANGE_PRESETS, toSessionQuery } from "@/lib/query";
 
 export const dynamic = "force-dynamic";
+
+const HEATMAP_WEEKS = 52;
 
 export default async function OverviewPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
@@ -26,6 +29,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
 
   const { total, items } = engine.list(q);
   const days = engine.days(aggQ);
+  const heatmapDays = engine.days({ ...aggQ, since: heatmapStart(HEATMAP_WEEKS).toISOString(), until: undefined });
   const toolStats = engine.toolStats({ ...aggQ, tools: undefined });
   const projectStats = engine.projects({ ...aggQ, project: undefined });
   const counts = engine.counts();
@@ -35,7 +39,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const sessionsInRange = inRange.reduce((n, s) => n + s.sessionCount, 0);
   const messagesInRange = inRange.reduce((n, s) => n + s.messageCount, 0);
   const projectsInRange = engine.projects(aggQ).length;
-  const rangeLabel = RANGE_PRESETS.find((p) => p.id === filters.range)?.label ?? "range";
+  const rangeLabel = filters.day ?? RANGE_PRESETS.find((p) => p.id === filters.range)?.label ?? "range";
 
   return (
     <div className="flex flex-col gap-6">
@@ -58,6 +62,14 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
             <StatCard label="Tools active" value={inRange.length} hint={`${counts.tools} with any history`} />
             <StatCard label="Projects" value={projectsInRange} hint={`${counts.projects} all time`} />
           </div>
+
+          <section className="rounded-xl border bg-card p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-medium">Interactions</h2>
+              <span className="text-xs text-muted-foreground">human turns per day{filters.tools?.length || filters.project || filters.search ? ", current tool / project / search filter" : ", all tools"}</span>
+            </div>
+            <ActivityHeatmap days={heatmapDays} filters={filters} weeks={HEATMAP_WEEKS} />
+          </section>
 
           <section className="rounded-xl border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">

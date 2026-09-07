@@ -267,13 +267,14 @@ export class IndexStore {
   /** Activity per local day (sessions are bucketed by their last activity). */
   days(q: SessionQuery = {}): DayBucket[] {
     const { sql, params } = this.where(q);
-    const rows = this.db.all<{ tool: string; ended_at: string; message_count: number }>(`select tool, ended_at, message_count from sessions ${sql}`, ...params);
+    const rows = this.db.all<{ tool: string; ended_at: string; message_count: number; user_count: number }>(`select tool, ended_at, message_count, user_count from sessions ${sql}`, ...params);
     const map = new Map<string, DayBucket>();
     for (const r of rows) {
       const day = localDay(r.ended_at);
-      const b = map.get(day) ?? { day, sessionCount: 0, messageCount: 0, byTool: {} };
+      const b = map.get(day) ?? { day, sessionCount: 0, messageCount: 0, userMessageCount: 0, byTool: {} };
       b.sessionCount++;
       b.messageCount += r.message_count;
+      b.userMessageCount += r.user_count ?? 0;
       b.byTool[r.tool as ToolId] = (b.byTool[r.tool as ToolId] ?? 0) + 1;
       map.set(day, b);
     }

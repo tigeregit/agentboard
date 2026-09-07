@@ -22,7 +22,7 @@ export function ActivityChart({ days, since, until, maxDays = 90 }: { days: DayB
   const series: DayBucket[] = [];
   for (let d = new Date(start); d <= end; d = new Date(d.getTime() + 86400e3)) {
     const key = localDayString(d);
-    series.push(byDay.get(key) ?? { day: key, sessionCount: 0, messageCount: 0, byTool: {} });
+    series.push(byDay.get(key) ?? { day: key, sessionCount: 0, messageCount: 0, userMessageCount: 0, byTool: {} });
   }
   const max = Math.max(1, ...series.map((d) => d.sessionCount));
   const totals = new Map<ToolId, number>();

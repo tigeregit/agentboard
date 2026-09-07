@@ -111,10 +111,10 @@ export function FilterBar({ filters, tools, projects, showSearch = true }: Props
               type="button"
               role="radio"
               aria-checked={filters.range === p.id}
-              onClick={() => apply({ range: p.id as RangeId, since: undefined, until: undefined })}
+              onClick={() => apply({ range: p.id as RangeId, since: undefined, until: undefined, day: undefined })}
               className={cn(
                 "rounded-[5px] px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground",
-                filters.range === p.id && "bg-primary text-primary-foreground hover:text-primary-foreground",
+                filters.range === p.id && !filters.day && "bg-primary text-primary-foreground hover:text-primary-foreground",
               )}
             >
               {p.label}
@@ -126,10 +126,11 @@ export function FilterBar({ filters, tools, projects, showSearch = true }: Props
             <ToolDot tool={t} /> {TOOL_META[t]?.name ?? t}
           </Chip>
         ))}
+        {filters.day && <Chip onClear={() => apply({ day: undefined, range: "30d" })}>day: {filters.day}</Chip>}
         {filters.project && <Chip onClear={() => apply({ project: undefined })}>project: {filters.project}</Chip>}
         {filters.search && <Chip onClear={() => apply({ search: undefined })}>“{filters.search}”</Chip>}
         {hasFilters && (
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => apply({ tools: undefined, project: undefined, search: undefined, range: "30d" })}>
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => apply({ tools: undefined, project: undefined, search: undefined, range: "30d", day: undefined, since: undefined, until: undefined })}>
             Reset
           </Button>
         )}

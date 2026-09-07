@@ -190,5 +190,7 @@ export interface DayBucket {
   day: string;
   sessionCount: number;
   messageCount: number;
+  /** Human turns across all sessions that day: the "interactions" measure used by the heatmap. */
+  userMessageCount: number;
   byTool: Partial<Record<ToolId, number>>;
 }
