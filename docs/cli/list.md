@@ -69,7 +69,7 @@ $ agentboard list --json -n 2
       "key": "goose:20260907_153755",
       "tool": "goose",
       "project": "mobile-app",
-      "projectPath": "/Users/feng/code/mobile-app",
+      "projectPath": "/Users/example/code/mobile-app",
       "title": "goose-37c71ca4",
       "startedAt": "2026-09-07T15:37:55.000Z",
       "endedAt": "2026-09-07T15:50:55.000Z",

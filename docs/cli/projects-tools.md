@@ -15,10 +15,10 @@ agentboard tools    [-t <ids>] [-p <text>] [--since <date>] [--until <date>] [--
 $ agentboard projects --since 30d
 project             sessions  msgs  last activity     tools                                              path
 ──────────────────  ────────  ────  ────────────────  ─────────────────────────────────────────────────  ────────────────────────────────────────────
-mobile-app          26        268   2026-09-07 23:50  Copilot app,VS Code,OpenCode,Codex,Cursor,Grok,…   /Users/feng/code/mobile-app
-agentboard          22        210   2026-09-07 20:57  Copilot app,VS Code,OpenCode,Codex,Cursor,Grok,…   /Users/feng/code/agentboard
-paper-reproduction  25        265   2026-09-07 18:57  Copilot CLI,Copilot app,VS Code,OpenCode,Codex,…   /Users/feng/research/paper-reproduction
-infra-terraform     24        246   2026-09-07 17:51  Copilot CLI,VS Code,OpenCode,Codex,Cursor,Grok,…   /Users/feng/code/infra-terraform
+mobile-app          26        268   2026-09-07 23:50  Copilot app,VS Code,OpenCode,Codex,Cursor,Grok,…   /Users/example/code/mobile-app
+agentboard          22        210   2026-09-07 20:57  Copilot app,VS Code,OpenCode,Codex,Cursor,Grok,…   /Users/example/code/agentboard
+paper-reproduction  25        265   2026-09-07 18:57  Copilot CLI,Copilot app,VS Code,OpenCode,Codex,…   /Users/example/research/paper-reproduction
+infra-terraform     24        246   2026-09-07 17:51  Copilot CLI,VS Code,OpenCode,Codex,Cursor,Grok,…   /Users/example/code/infra-terraform
 ```
 
 `--json` 每项：`{ path, name, sessionCount, messageCount, userMessageCount, tools[], firstActivity, lastActivity }`。

@@ -55,7 +55,7 @@ describe("trae state.vscdb: traeSessionsFromValue", () => {
         },
       ],
     };
-    const [s] = traeSessionsFromValue(value, DB, "/home/feng/code/app", 0);
+    const [s] = traeSessionsFromValue(value, DB, "/home/example/code/app", 0);
     assert.equal(s.tool, "trae");
     assert.equal(s.surface, "ide");
     assert.equal(s.nativeId, "agent-1");
@@ -90,7 +90,7 @@ describe("trae state.vscdb: adapter scan + load", () => {
 
     // Workspace A: primary exact key plus a decoy suffixed key that must lose precedence.
     const a = path.join(storage, "aaaa");
-    write(path.join(a, "workspace.json"), JSON.stringify({ folder: "file:///home/feng/code/alpha" }));
+    write(path.join(a, "workspace.json"), JSON.stringify({ folder: "file:///home/example/code/alpha" }));
     let db = openSqlite(path.join(a, "state.vscdb"));
     db.exec("create table ItemTable (key text unique, value blob)");
     db.run("insert into ItemTable values (?, ?)", "memento/icube-ai-agent-storage", JSON.stringify({ list: [{ id: "a-1", title: "Primary", messages: [{ role: "user", content: "hello from agent storage" }, { role: "ai", content: "hi" }] }] }));
@@ -99,7 +99,7 @@ describe("trae state.vscdb: adapter scan + load", () => {
 
     // Workspace B: only the install-suffixed key, stored as a BLOB, two sessions.
     const b = path.join(storage, "bbbb");
-    write(path.join(b, "workspace.json"), JSON.stringify({ folder: "file:///home/feng/code/beta" }));
+    write(path.join(b, "workspace.json"), JSON.stringify({ folder: "file:///home/example/code/beta" }));
     db = openSqlite(path.join(b, "state.vscdb"));
     db.exec("create table ItemTable (key text unique, value blob)");
     const payload = { sessions: { "b-1": { id: "b-1", messages: [{ role: "user", content: "first" }, { role: "assistant", content: "ok" }] }, "b-2": { id: "b-2", title: "Second", messages: [{ role: "user", content: "second" }] } } };
@@ -108,7 +108,7 @@ describe("trae state.vscdb: adapter scan + load", () => {
 
     // Workspace C: a VS Code workspace without any Trae chat, must be ignored silently.
     const c = path.join(storage, "cccc");
-    write(path.join(c, "workspace.json"), JSON.stringify({ folder: "file:///home/feng/code/gamma" }));
+    write(path.join(c, "workspace.json"), JSON.stringify({ folder: "file:///home/example/code/gamma" }));
     db = openSqlite(path.join(c, "state.vscdb"));
     db.exec("create table ItemTable (key text unique, value blob)");
     db.run("insert into ItemTable values (?, ?)", "workbench.panel.pinnedPanels", "[]");
@@ -123,7 +123,7 @@ describe("trae state.vscdb: adapter scan + load", () => {
     assert.deepEqual(ide.map((s) => s.nativeId).sort(), ["a-1", "b-1", "b-2"]);
     const a1 = ide.find((s) => s.nativeId === "a-1")!;
     assert.equal(a1.title, "Primary");
-    assert.equal(a1.project.path, "/home/feng/code/alpha");
+    assert.equal(a1.project.path, "/home/example/code/alpha");
     assert.equal(ide.find((s) => s.nativeId === "b-2")!.project.name, "beta");
     assert.equal(r.seen.length, 3, "every state.vscdb is reported as seen, chat or not");
   });

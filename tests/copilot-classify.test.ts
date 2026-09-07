@@ -33,7 +33,7 @@ describe("copilot: workspace.yaml name + client_name end to end", () => {
   let home: string;
   const events = (id: string, prompt: string) =>
     [
-      { type: "session.start", timestamp: "2026-09-01T10:00:00Z", data: { sessionId: id, context: { cwd: "/home/feng/code/app" } } },
+      { type: "session.start", timestamp: "2026-09-01T10:00:00Z", data: { sessionId: id, context: { cwd: "/home/example/code/app" } } },
       { type: "user.message", timestamp: "2026-09-01T10:00:05Z", data: { content: prompt } },
       { type: "assistant.message", timestamp: "2026-09-01T10:00:20Z", data: { content: "Sure." } },
     ]
@@ -44,13 +44,13 @@ describe("copilot: workspace.yaml name + client_name end to end", () => {
     home = makeFakeHome("copilot");
     const state = path.join(home, ".copilot/session-state");
     write(path.join(state, "desk/events.jsonl"), events("desk", "desktop prompt"));
-    write(path.join(state, "desk/workspace.yaml"), "id: desk\ncwd: /home/feng/code/app\nclient_name: github/autopilot\nname: Friendly desktop name\n");
+    write(path.join(state, "desk/workspace.yaml"), "id: desk\ncwd: /home/example/code/app\nclient_name: github/autopilot\nname: Friendly desktop name\n");
     write(path.join(state, "cli/events.jsonl"), events("cli", "cli prompt"));
-    write(path.join(state, "cli/workspace.yaml"), "id: cli\ncwd: /home/feng/code/app\nclient_name: github/cli\nsummary: legacy summary\n");
+    write(path.join(state, "cli/workspace.yaml"), "id: cli\ncwd: /home/example/code/app\nclient_name: github/cli\nsummary: legacy summary\n");
     write(path.join(state, "code/events.jsonl"), events("code", "vscode prompt"));
-    write(path.join(state, "code/workspace.yaml"), "id: code\ncwd: /home/feng/code/app\nclient_name: github/vscode\n");
+    write(path.join(state, "code/workspace.yaml"), "id: code\ncwd: /home/example/code/app\nclient_name: github/vscode\n");
     write(path.join(state, "bare/events.jsonl"), events("bare", "bare prompt"));
-    write(path.join(state, "bare/workspace.yaml"), "id: bare\ncwd: /home/feng/code/app\n");
+    write(path.join(state, "bare/workspace.yaml"), "id: bare\ncwd: /home/example/code/app\n");
     const db = openSqlite(path.join(home, ".copilot/data.db"));
     db.exec("create table sessions (id text primary key)");
     db.run("insert into sessions values ('bare')");

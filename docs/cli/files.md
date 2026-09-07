@@ -21,12 +21,12 @@ agentboard files [-t <ids>] [-p <text>] [--since <date>] [--until <date>]
 $ agentboard files -n 6
 edits  reads  sessions  last              path
 ─────  ─────  ────────  ────────────────  ─────────────────────────────────────────────────────────
-3      10     5         2026-09-06 22:50  /Users/feng/code/infra-terraform/src/index.ts
-3      5      3         2026-09-04 20:44  /Users/feng/code/mobile-app/src/index.ts
-3      3      3         2026-09-03 19:50  /Users/feng/code/agentboard/src/index.ts
-2      6      3         2026-09-05 21:56  /Users/feng/research/paper-reproduction/src/index.ts
-1      6      2         2026-09-01 19:07  /Users/feng/research/paper-reproduction/src/storage/s3.ts
-1      5      2         2026-08-31 18:07  /Users/feng/code/mobile-app/src/storage/s3.ts
+3      10     5         2026-09-06 22:50  /Users/example/code/infra-terraform/src/index.ts
+3      5      3         2026-09-04 20:44  /Users/example/code/mobile-app/src/index.ts
+3      3      3         2026-09-03 19:50  /Users/example/code/agentboard/src/index.ts
+2      6      3         2026-09-05 21:56  /Users/example/research/paper-reproduction/src/index.ts
+1      6      2         2026-09-01 19:07  /Users/example/research/paper-reproduction/src/storage/s3.ts
+1      5      2         2026-08-31 18:07  /Users/example/code/mobile-app/src/storage/s3.ts
 ```
 
 `edits` 是 `edit` 类别的调用数，`reads` 是其他类别（read / search…）触达该文件的调用数。

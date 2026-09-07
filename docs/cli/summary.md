@@ -33,13 +33,13 @@ $ agentboard summary --period week
 
 ## By project
 
-- `mobile-app` (/Users/feng/code/mobile-app): 3 sessions · VS Code, Cursor, Goose
-- `agentboard` (/Users/feng/code/agentboard): 2 sessions · Kimi, Cline
+- `mobile-app` (/Users/example/code/mobile-app): 3 sessions · VS Code, Cursor, Goose
+- `agentboard` (/Users/example/code/agentboard): 2 sessions · Kimi, Cline
 …
 
 ## Sessions
 
-### infra-terraform  <sub>/Users/feng/code/infra-terraform</sub>
+### infra-terraform  <sub>/Users/example/code/infra-terraform</sub>
 
 - **Continue: Profile the ingestion script; it takes 4** — Continue · 2026-09-06 15:37 · 25m · 2 prompts / 1 tool calls · `continue:1fe5a3cf-abcd-4f01-8345-6789abcdef01`
 - **Cursor: Write a weekly summary of the experi** — Cursor · 2026-09-07 09:37 · 14m · 3 prompts / 3 tool calls · `cursor:55946915-abcd-4f01-8345-6789abcdef01`

@@ -24,9 +24,9 @@ agentboard show <key> --files | --summary | --json
 $ agentboard show claude-code:32e1e853
 # Why does the nightly job fail with a timezone error? Investigate and fix
 
-- Tool: Claude Code (cli) · Project: /Users/feng/code/infra-terraform
+- Tool: Claude Code (cli) · Project: /Users/example/code/infra-terraform
 - Time: 2026-09-06 22:37 → 2026-09-06 22:51 (14m) · Model: claude-opus-5 · Branch: main
-- Key: `claude-code:32e1e853-abcd-4f01-8345-6789abcdef01` · Source: file /Users/feng/.claude/projects/-Users-feng-code-infra-terraform/32e1e853-abcd-4f01-8345-6789abcdef01.jsonl
+- Key: `claude-code:32e1e853-abcd-4f01-8345-6789abcdef01` · Source: file /Users/example/.claude/projects/-Users-example-code-infra-terraform/32e1e853-abcd-4f01-8345-6789abcdef01.jsonl
 - Parts: 12 (rich) · Turns: 3 · Tool calls: 3 (edit 1, shell 1, search 1) · Errors: 0 · Files: 1
 
 ## Turns
@@ -41,7 +41,7 @@ turn  at     dur  seq   calls    err  prompt                                    
 
 edits  reads  path
 ─────  ─────  ─────────────────────────────────────────────
-1      2      /Users/feng/code/infra-terraform/src/index.ts
+1      2      /Users/example/code/infra-terraform/src/index.ts
 
 Tools: Edit ×1, Bash ×1, Grep ×1
 
@@ -60,7 +60,7 @@ Turns 表每行一轮：开始时刻、时长、part 序号区间、工具调用
 $ agentboard show claude-code:32e1e853 --turn 1 --max-chars 300
 # Why does the nightly job fail with a timezone error? Investigate and fix
 
-- Tool: Claude Code (cli) · Project: /Users/feng/code/infra-terraform
+- Tool: Claude Code (cli) · Project: /Users/example/code/infra-terraform
 - Time: 2026-09-06 22:37 → 2026-09-06 22:51 (14m) · Model: claude-opus-5 · Branch: main
 - Key: `claude-code:32e1e853-abcd-4f01-8345-6789abcdef01` · Source: file …
 
@@ -68,9 +68,9 @@ $ agentboard show claude-code:32e1e853 --turn 1 --max-chars 300
 Why does the nightly job fail with a timezone error? Investigate and fix
 
 ### [1] t1 tool_call edit `Edit` · claude-opus-5 · 22:38
-files: /Users/feng/code/infra-terraform/src/index.ts
+files: /Users/example/code/infra-terraform/src/index.ts
 ```
-file_path: /Users/feng/code/infra-terraform/src/index.ts
+file_path: /Users/example/code/infra-terraform/src/index.ts
 ```
 
 ### [2] t1 tool_result edit `Edit` (19B) · 22:38
@@ -107,7 +107,7 @@ $ agentboard show claude-code:32e1e853 --parts
 seq  turn  kind         cat     tool  at     size  preview
 ───  ────  ───────────  ──────  ────  ─────  ────  ────────────────────────────────────────────────────────────────────────────
 0    1     prompt                     22:37  72B   Why does the nightly job fail with a timezone error? Investigate and fix
-1    1     tool_call    edit    Edit  22:38  56B   /Users/feng/code/infra-terraform/src/index.ts
+1    1     tool_call    edit    Edit  22:38  56B   /Users/example/code/infra-terraform/src/index.ts
 2    1     tool_result  edit    Edit  22:38  19B   export const x = 1;
 3    1     reply                      22:39  208B  The job reads `date.today()` in local time but compares against UTC timestamps…
 4    2     prompt                     22:43  57B   Refactor the auth middleware to use the new session store

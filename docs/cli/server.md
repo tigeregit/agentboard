@@ -34,7 +34,7 @@ agentboard serve --dev                      # 改看板代码时
 
 ```
 $ agentboard server start
-started at http://127.0.0.1:4817 (pid 41233, log /Users/feng/.agentboard/server.log)
+started at http://127.0.0.1:4817 (pid 41233, log /Users/example/.agentboard/server.log)
 
 $ agentboard server status
 agentboard server: running
@@ -48,7 +48,7 @@ uptime        0h 12m
 index         316 sessions · 12 tools · 99 projects
 last scan     2026-09-07 23:51
 auto-refresh  every 60s
-log           /Users/feng/.agentboard/server.log
+log           /Users/example/.agentboard/server.log
 
 $ agentboard server stop
 stopped pid 41233 (http://127.0.0.1:4817)

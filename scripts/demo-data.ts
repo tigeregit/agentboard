@@ -42,7 +42,7 @@ const now = Date.now();
 const H = 3600e3;
 const D = 24 * H;
 
-const PROJECTS = ["/Users/feng/code/agentboard", "/Users/feng/code/infra-terraform", "/Users/feng/research/paper-reproduction", "/Users/feng/code/mobile-app"];
+const PROJECTS = ["/Users/example/code/agentboard", "/Users/example/code/infra-terraform", "/Users/example/research/paper-reproduction", "/Users/example/code/mobile-app"];
 const PROMPTS = [
   "Add a retry with exponential backoff to the S3 uploader and cover it with tests",
   "Why does the nightly job fail with a timezone error? Investigate and fix",
@@ -241,7 +241,7 @@ for (let s = 0; s < 6; s++) {
   const id = uuid(`copilot${i}`);
   const host = s % 3 === 0 ? "cli" : s % 3 === 1 ? "app" : "vscode";
   const dir = ensure(path.join(HOME, ".copilot/session-state", id));
-  const ev: unknown[] = [{ type: "session.start", timestamp: iso(start), data: { sessionId: id, context: { cwd, repository: "feng/" + path.basename(cwd), branch: "main" } } }];
+  const ev: unknown[] = [{ type: "session.start", timestamp: iso(start), data: { sessionId: id, context: { cwd, repository: "example/" + path.basename(cwd), branch: "main" } } }];
   ev.push({ type: "session.model_change", timestamp: iso(start), data: { model: "gpt-5.6-terra" } });
   for (const t of turns(i, start)) {
     ev.push({ type: "user.message", timestamp: iso(t.t), data: { content: t.user } });
@@ -251,14 +251,14 @@ for (let s = 0; s < 6; s++) {
   }
   ev.push({ type: "session.shutdown", timestamp: iso(start + H), data: { codeChanges: { filesModified: ["src/a.ts"] } } });
   write(path.join(dir, "events.jsonl"), jsonl(ev));
-  write(path.join(dir, "workspace.yaml"), `id: ${id}\ncwd: ${cwd}\ngit_root: ${cwd}\nrepository: feng/${path.basename(cwd)}\nhost_type: ${host}\nbranch: main\nsummary: "${host} · ${rnd(PROMPTS, i).slice(0, 40).replace(/"/g, "'")}"\ncreated_at: ${iso(start)}\nupdated_at: ${iso(start + H)}\n`);
+  write(path.join(dir, "workspace.yaml"), `id: ${id}\ncwd: ${cwd}\ngit_root: ${cwd}\nrepository: example/${path.basename(cwd)}\nhost_type: ${host}\nbranch: main\nsummary: "${host} · ${rnd(PROMPTS, i).slice(0, 40).replace(/"/g, "'")}"\ncreated_at: ${iso(start)}\nupdated_at: ${iso(start + H)}\n`);
 }
 // Newer Copilot builds drop host_type and record client_name + a user-facing name instead.
 for (const [k, client] of ["github/autopilot", "github/cli"].entries()) {
   const { i, start, cwd } = next();
   const id = uuid(`copilot-client${k}`);
   const dir = ensure(path.join(HOME, ".copilot/session-state", id));
-  const ev: unknown[] = [{ type: "session.start", timestamp: iso(start), data: { sessionId: id, context: { cwd, repository: "feng/" + path.basename(cwd), branch: "main" } } }];
+  const ev: unknown[] = [{ type: "session.start", timestamp: iso(start), data: { sessionId: id, context: { cwd, repository: "example/" + path.basename(cwd), branch: "main" } } }];
   for (const t of turns(i, start)) {
     ev.push({ type: "user.message", timestamp: iso(t.t), data: { content: t.user } });
     ev.push({ type: "assistant.message", timestamp: iso(t.t + 60e3), data: { content: t.reply } });

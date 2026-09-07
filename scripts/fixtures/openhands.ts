@@ -29,7 +29,7 @@ export const openhands: Fixture = (d) => {
         {
           conversation_id: sid,
           user_id: null,
-          selected_repository: s === 0 ? "feng/" + path.basename(cwd) : null,
+          selected_repository: s === 0 ? "example/" + path.basename(cwd) : null,
           selected_branch: s === 0 ? "main" : null,
           git_provider: s === 0 ? "github" : null,
           title: `OpenHands: ${d.rnd(d.PROMPTS, i).slice(0, 40)}`,

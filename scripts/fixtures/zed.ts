@@ -27,7 +27,7 @@ function dbThread(d: Demo, i: number, start: number, cwd: string, title: string)
     messages,
     updated_at: d.iso(start + 30 * 60e3),
     detailed_summary: null,
-    initial_project_snapshot: { worktree_snapshots: [{ worktree_path: cwd, git_state: { remote_url: "git@github.com:feng/agentboard.git", head_sha: "0123abcd", current_branch: "main", diff: null } }], unsaved_buffer_paths: [], timestamp: d.iso(start) },
+    initial_project_snapshot: { worktree_snapshots: [{ worktree_path: cwd, git_state: { remote_url: "git@github.com:example/agentboard.git", head_sha: "0123abcd", current_branch: "main", diff: null } }], unsaved_buffer_paths: [], timestamp: d.iso(start) },
     cumulative_token_usage: { input_tokens: 5200, output_tokens: 900, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
     request_token_usage: {},
     model: { provider: "anthropic", model: "claude-sonnet-4-5" },
