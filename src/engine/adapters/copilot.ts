@@ -33,8 +33,12 @@ interface Workspace {
   git_root?: string;
   repository?: string;
   host_type?: string;
+  /** Newer builds record the host as `github/cli`, `github/autopilot` (desktop app) or `github/vscode`. */
+  client_name?: string;
   branch?: string;
   summary?: string;
+  /** User-facing session name; the desktop app derives it from the first prompt, the CLI sets it via `/name`. */
+  name?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -65,11 +69,22 @@ function desktopSessionIds(): Set<string> {
   return ids;
 }
 
-function classify(ws: Workspace, id: string, desktopIds: Set<string>): ToolId {
+/**
+ * Which Copilot surface owns a ~/.copilot session. Precedence:
+ *  1. `host_type` (older builds: cli / app / vscode ...)
+ *  2. `client_name` (newer builds: github/cli, github/autopilot = desktop app, github/vscode)
+ *  3. membership in the desktop app's data.db `sessions` table
+ *  4. CLI
+ */
+export function classifyCopilotSession(ws: Pick<Workspace, "host_type" | "client_name">, id: string, desktopIds: Set<string>): ToolId {
   const host = (ws.host_type ?? "").toLowerCase();
   if (/app|desktop|electron/.test(host)) return "copilot-desktop";
   if (/vscode|code/.test(host)) return "vscode-copilot";
   if (host === "cli" || host === "terminal") return "copilot-cli";
+  const client = (ws.client_name ?? "").toLowerCase();
+  if (client === "github/autopilot" || /desktop|autopilot/.test(client)) return "copilot-desktop";
+  if (/vscode|jetbrains|xcode|ide/.test(client)) return "vscode-copilot";
+  if (client === "github/cli" || client.endsWith("/cli")) return "copilot-cli";
   return desktopIds.has(id) ? "copilot-desktop" : "copilot-cli";
 }
 
@@ -132,12 +147,12 @@ async function parseSessionDir(dir: string, desktopIds: Set<string>): Promise<Se
     }
   }
   if (!messages.length) return null;
-  const tool = classify(ws, id, desktopIds);
+  const tool = classifyCopilotSession(ws, id, desktopIds);
   return buildSession({
     tool,
     surface: tool === "copilot-desktop" ? "desktop" : tool === "vscode-copilot" ? "ide" : "cli",
     nativeId: id,
-    title: ws.summary,
+    title: ws.name?.trim() || ws.summary,
     project: projectFromPath(cwd ?? repo),
     messages,
     source: fileSource(eventsFile),
@@ -146,7 +161,7 @@ async function parseSessionDir(dir: string, desktopIds: Set<string>): Promise<Se
     model,
     gitBranch: branch,
     fallbackTime: fs.statSync(eventsFile).mtimeMs,
-    extra: { repository: repo, hostType: ws.host_type, filesModified },
+    extra: { repository: repo, hostType: ws.host_type, clientName: ws.client_name, filesModified },
   });
 }
 
@@ -184,7 +199,7 @@ function makeAdapter(id: "copilot-cli" | "copilot-desktop"): SourceAdapter {
     strategies: [
       { kind: "api", status: "reserved", description: "Sessions sync to your GitHub account (/chronicle); no public REST query surface yet." },
       { kind: "native-index", status: isDesktop ? "implemented" : "reserved", description: isDesktop ? "~/.copilot/data.db `sessions` table used to attribute sessions to the desktop app." : "~/.copilot/session-store.db powers /chronicle; schema is internal, reserved for enrichment." },
-      { kind: "file", status: "implemented", description: "~/.copilot/session-state/<id>/events.jsonl + workspace.yaml (shared by CLI, desktop app and VS Code hosts)." },
+      { kind: "file", status: "implemented", description: "~/.copilot/session-state/<id>/events.jsonl + workspace.yaml (shared by CLI, desktop app and VS Code hosts; attributed via host_type, then client_name github/cli|github/autopilot|github/vscode, then data.db)." },
     ],
     async detect() {
       return detection([
