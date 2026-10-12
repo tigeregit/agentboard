@@ -1,72 +1,53 @@
+<div align="center">
+
 # agentboard
 
-One board and one CLI over the session history of every AI coding agent on your machine.
+**One board and one CLI over the session history of every AI coding agent on your machine.**
+
+Claude Code · Codex · Cursor · Copilot · OpenCode · Gemini CLI · Kimi · Trae · Aider · Cline · Zed · and 25+ more, plus ChatGPT / Claude.ai exports
+
+![Node](https://img.shields.io/badge/node-%E2%89%A522.13-339933?logo=node.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)
+![SQLite](https://img.shields.io/badge/index-SQLite%20%2B%20FTS5-003B57?logo=sqlite&logoColor=white)
+![Local only](https://img.shields.io/badge/data-stays%20local-success)
+
+<img src="docs/screenshots/dashboard.png" alt="agentboard dashboard: stats, interactions heatmap and per-tool breakdown" width="900">
+
+</div>
+
+---
 
 Most people now use several agents in parallel: Claude Code for one repo, Cursor for another, Codex in CI, Copilot in VS Code, a handful of Chinese-market CLIs on the side. Each one keeps its own history in its own format. agentboard indexes all of them into a single normalized model so that
 
 - **humans** get a dashboard filtered by time, tool and project, and
 - **agents / scripts** get the same engine through a CLI and a JSON API, e.g. to write daily or weekly digests automatically.
 
-## Supported sources
+## Contents
 
-| Tool | How it is read today | Native query interface |
-| --- | --- | --- |
-| GitHub Copilot CLI | `~/.copilot/session-state/<id>/events.jsonl` + `workspace.yaml` | reserved: sessions sync to GitHub (`/chronicle`) but there is no public REST surface yet |
-| GitHub Copilot app (desktop) | same store; sessions are attributed by `workspace.yaml` `host_type`, then `client_name` (`github/cli`, `github/autopilot` = desktop app, `github/vscode`), then the `~/.copilot/data.db` `sessions` table | reserved |
-| VS Code Copilot Chat | `User/workspaceStorage/<hash>/chatSessions/*.jsonl` mutation logs (legacy `*.json` too), `globalStorage/emptyWindowChatSessions`, plus VS Code-hosted agent sessions in `~/.copilot` | none; `Chat: Export Session` is manual |
-| OpenCode | **`opencode serve` HTTP API** when `OPENCODE_SERVER_URL` is set; otherwise `~/.local/share/opencode/opencode.db` or legacy `storage/*.json` | **implemented** (`GET /session`, `/session/:id/message`) |
-| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (+ `archived_sessions/`) | reserved: `codex app-server` JSON-RPC `thread/list`, `thread/read` |
-| Cursor | IDE `state.vscdb` (`cursorDiskKV` composers + bubbles), CLI `~/.cursor/chats/<md5(cwd)>/<id>/store.db`, fallback `agent-transcripts/*.jsonl` | none |
-| Grok Build | `~/.grok/sessions/<cwd>/<id>/updates.jsonl` (ACP updates) + `summary.json` | reserved: `grok sessions list\|search` has an FTS5 index but no machine-readable output |
-| Claude Code | `~/.claude/projects/<encoded-cwd>/<session>.jsonl` (+ `subagents/`) | reserved: the Agent SDK resumes but cannot list sessions |
-| pi coding agent | `~/.pi/agent/sessions/<cwd>/*.jsonl` tree entries, active branch followed | library-only `SessionManager` |
-| Kimi Code / Kimi CLI | **`~/.kimi-code/session_index.jsonl`** to enumerate, then `wire.jsonl` + `state.json`; legacy `~/.kimi/sessions/.../context.jsonl` | **native index implemented** |
-| DeepSeek Harness (`dsh`) | `~/.dsh/sessions/<cwd>/session-<id>/session.jsonl(.zstd)`, zstd decoded in-process (torn frames tolerated) | reserved: `dsh web` is UI-only for now |
-| Trae | Trae IDE / SOLO chats from `User/workspaceStorage/<hash>/state.vscdb` (`ItemTable` icube mementos: `memento/icube-ai-agent-storage`, `ChatStore`, `icube-ai[-ng]-chat-storage-*`; reverse-engineered, best effort); `trae-agent` CLI `trajectory_*.json`. The IDE's `ModularData/ai-agent/database.db` is SQLCipher-encrypted (detected, not readable) — for anything missing use the in-app export + `agentboard import markdown --tool trae` | reserved: SOLO cloud sync has no public API |
-| WorkBuddy / CodeBuddy Code | `~/.codebuddy/projects/<cwd>/<session>.jsonl` (flat item schema and Claude-shaped legacy files) | none |
-| MiniMax Code (`mcode`) | OpenCode-schema SQLite under `MINIMAX_DATA_DIR` / `~/.minimax` / `~/.local/share/minimax-code`; pre-isolation builds land in OpenCode's DB and are shown there | reserved: ACP |
-| ZCode | `~/.zcode/cli/db/db.sqlite` (OpenCode schema) or legacy `~/.zcode/projects/*.jsonl` | reserved: `zcodex app-server` ACP `session/list` |
-| Gemini CLI | `~/.gemini/tmp/<projectHash>/chats/session-*.jsonl` (+ legacy `.json`), cwd from `.project_root`; subagent sessions skipped | none |
-| Qwen Code | `~/.qwen/projects/<sanitized-cwd>/chats/<id>.jsonl` (`QWEN_RUNTIME_DIR`, `QWEN_HOME`) | none |
-| Antigravity | CLI: `~/.gemini/antigravity-cli/history.jsonl` + `brain/<id>/.system_generated/logs/transcript_full.jsonl`; desktop: `monitor-state.json` + `.token-monitor/rpc-cache` usage records (conversation `.pb` / `.db` blobs are detected, not decoded) | none |
-| Amazon Q CLI / Kiro CLI | `<data_local_dir>/amazon-q/data.sqlite3` `conversations`, `<data_local_dir>/kiro-cli/data.sqlite3` `conversations_v2` (v1 fallback) | none |
-| Aider | `<project>/.aider.chat.history.md`, sessions split on `# aider chat started at …`; projects found one level under `~/{code,src,projects,…}` or `AGENTBOARD_AIDER_DIRS` | none |
-| Cline / Roo Code / Kilo Code | `<host>/User/globalStorage/<extension>/tasks/<id>/ui_messages.json` for VS Code, Insiders, VSCodium, Cursor, Windsurf; task index from `taskHistory.json`, `_index.json` or `state.vscdb` | none |
-| Continue / PearAI | `~/.continue/sessions/<id>.json` (`CONTINUE_GLOBAL_DIR`), `~/.pearai/sessions/` | none |
-| Crush | `<project>/.crush/crush.db` (depth-4 discovery under the same project roots, `AGENTBOARD_CRUSH_DIRS`) | none |
-| ForgeCode | `~/.forge/.forge.db` `conversations` (`FORGE_CONFIG`), both context serialisations | none |
-| Goose | `sessions.db` under `~/.local/share/goose`, `~/Library/Application Support/Block/goose`, `GOOSE_PATH_ROOT` | none |
-| llm CLI | `io.datasette.llm/logs.db` `conversations` + `responses` (`LLM_USER_PATH`) | none |
-| oh-my-pi | `~/.omp/agent/sessions/<cwd>/*.jsonl` (pi format) | none |
-| OpenHands | `~/.openhands/sessions/<sid>/events/*.json` + `metadata.json` | reserved: app-server REST |
-| Open Interpreter | `~/.openinterpreter/sessions/**/rollout-*.jsonl` (Codex format, shared parser) | none |
-| Mistral Vibe | `~/.vibe/logs/session/<dir>/meta.json` + `messages.jsonl` (`VIBE_HOME`) | none |
-| Zed (Agent Panel) | `threads/threads.db` (JSON or zstd blobs) under the Zed data dir | none |
-| ChatGPT (web) | official data export: `agentboard import chatgpt conversations.json` | consumer API: none (Compliance API is enterprise-only) |
-| Claude.ai (web) | official data export: `agentboard import claude-web conversations.json` | none |
-| Open WebUI | **REST API** (`OPENWEBUI_URL` + `OPENWEBUI_API_KEY`) | **implemented** |
+- [Features](#features) · [Quick start](#quick-start) · [Installation](#installation) · [Dashboard (`serve`)](#dashboard-serve-mode) · [CLI](#cli) · [HTTP API](#http-api) · [Configuration](#configuration) · [Supported sources](#supported-sources) · [How it works](#how-it-works) · [FAQ](#faq--troubleshooting) · [Contributing](#contributing) · [License](#license)
 
-Every adapter declares its strategies in order of preference (`api` → `native-index` → `sqlite`/`file` → `import`) with a status of `implemented`, `reserved` or `unavailable`. `agentboard sources --json` and the **Sources** page print this matrix for the current machine, so when a vendor ships a query API the adapter can switch to it without changing the data model.
+## Features
 
-Browser-based access to web chat boxes (for services without an API) is reserved as an interface only: see `src/engine/webchat/browser.ts` (`BrowserChatProvider`). Nothing is scraped today.
+- **36 sources, one model** — local coding agents (CLI, IDE and desktop apps) plus ChatGPT / Claude.ai exports, Markdown imports and Open WebUI, all normalized into the same session / message / part model.
+- **Web dashboard** — sessions with a 52-week interactions heatmap, per-day activity chart, linkable URL filters, full transcripts, projects, daily/weekly/monthly reports and a source-detection matrix.
+- **Agent-friendly CLI** — every command has `--json`; output is budgeted so a caller never gets a whole transcript by accident.
+- **Transcript search** — typed *parts* (prompts, replies, tool calls, tool results, plans…) in an SQLite FTS5 trigram index, so `grep` matches identifiers and CJK text as substrings.
+- **Incremental and self-refreshing** — only files whose size or mtime changed are re-read; the dashboard re-scans in the background (default every 60 s).
+- **Read-only and local** — reads each tool's own store (copying locked SQLite DBs to a temp file first); the index lives in `~/.agentboard`. Nothing is scraped from the web.
+- **Built-in background service** — `agentboard server start | stop | status | restart`.
+- **Demo data** — a synthetic home with every supported format for trying it without any agents installed.
 
 ## Quick start
 
-Requires Node 22.13+ (uses the built-in `node:sqlite`).
+Requires **Node 22.13+** (uses the built-in `node:sqlite`).
 
 ```bash
+git clone https://github.com/tigeregit/agentboard.git && cd agentboard
 npm install
-npm run scan          # index every agent found on this machine (~/.agentboard/index.db)
-npm run dev           # dashboard on http://localhost:4817 (hot reload, for hacking on the UI)
-```
-
-Or run the dashboard from the CLI (the first start builds the production bundle):
-
-```bash
-npm link                                    # once; makes `agentboard` available
-agentboard serve                            # foreground on http://127.0.0.1:4817, Ctrl-C to stop
-agentboard server start                     # same thing as a background service
-agentboard server status | stop | restart   # manage it
+npm link              # once; makes `agentboard` available on your PATH
+agentboard scan       # index every agent found on this machine (~/.agentboard/index.db)
+agentboard serve      # dashboard on http://127.0.0.1:4817 (first start builds the production bundle)
 ```
 
 No agents installed? Generate a synthetic home with every supported format:
@@ -77,7 +58,31 @@ npm run dev:demo      # dashboard over the demo data
 AGENTBOARD_FAKE_HOME=/tmp/agentboard-demo-home npm run cli -- list --since 7d
 ```
 
-## Dashboard
+## Installation
+
+agentboard is not published to npm (`"private": true`); run it from a clone.
+
+| Way to run | Command |
+| --- | --- |
+| Global `agentboard` command | `npm install && npm link` |
+| Without linking | `npm run cli -- <command>` (e.g. `npm run cli -- list --since 7d`) |
+| Dashboard with hot reload (UI hacking) | `npm run dev` → http://localhost:4817 |
+
+## Dashboard (`serve` mode)
+
+```bash
+agentboard serve                            # foreground on http://127.0.0.1:4817, Ctrl-C to stop
+agentboard serve -p 8080 -H 0.0.0.0         # other port, reachable from the LAN
+agentboard server start                     # same thing as a background service
+agentboard server status | stop | restart   # manage it
+```
+
+| | |
+| --- | --- |
+| <img src="docs/screenshots/session-detail.png" alt="Session detail with transcript"> | <img src="docs/screenshots/reports.png" alt="Weekly report with Markdown digest"> |
+| **Session detail** — metadata and the full transcript | **Reports** — weekly digest with copyable Markdown |
+| <img src="docs/screenshots/sources.png" alt="Sources detection matrix"> | <img src="docs/screenshots/dashboard.png" alt="Sessions board"> |
+| **Sources** — detection and strategy per tool | **Sessions** — heatmap, stats and activity |
 
 - **Sessions** (`/`) — stat cards, a GitHub-style **interactions heatmap** (52 weeks; cell colour = human turns that day summed over all sessions, i.e. how much you talked to agents, not how many sessions you opened; click a cell to narrow the board to that day via `?day=YYYY-MM-DD`), per-day stacked activity chart, filters (search, tool, project, time range) and the session list grouped by day. Filters live in the URL, so any view is linkable.
 - **Session detail** (`/sessions/<key>`) — metadata, subagent links, and the full transcript loaded on demand from the tool's own store (user/assistant bubbles, tool calls, collapsible tool output).
@@ -86,6 +91,10 @@ AGENTBOARD_FAKE_HOME=/tmp/agentboard-demo-home npm run cli -- list --since 7d
 - **Sources** (`/sources`) — what was detected, which strategy is used, probed paths, warnings from the last scan; full rescan button.
 
 The dashboard keeps its own index fresh: every page and API request runs an incremental scan when the last one is older than `AGENTBOARD_AUTO_SCAN_SECONDS` (default 60), and the server process also re-scans on that interval in the background, so new sessions show up without anyone running `agentboard scan`. Incremental scans only re-read files whose size or mtime changed, so this is usually a few milliseconds. The **Rescan** button / `POST /api/scan` remain for forcing a full re-parse.
+
+`serve` and `server start` run the production build (`next start`); they build it on first use or with `--build`, and `--dev` runs `next dev` instead. The background service records its pid, port and URL in `~/.agentboard/server.json` and appends output to `~/.agentboard/server.log`; `stop` sends SIGTERM to the process group and escalates to SIGKILL after 10 s. `AGENTBOARD_PORT` / `AGENTBOARD_HOST` set the defaults.
+
+> Screenshots show synthetic demo data from `npm run demo`.
 
 ## CLI
 
@@ -121,8 +130,6 @@ agentboard server status [--json]                                 # url, pid, up
 agentboard server stop [--json]
 agentboard server restart [-p] [-H] [--build] [--json]            # keeps previous port/host unless overridden
 ```
-
-`serve` and `server start` run the production build (`next start`); they build it on first use or with `--build`, and `--dev` runs `next dev` instead. The background service records its pid, port and URL in `~/.agentboard/server.json` and appends output to `~/.agentboard/server.log`; `stop` sends SIGTERM to the process group and escalates to SIGKILL after 10 s. `AGENTBOARD_PORT` / `AGENTBOARD_HOST` set the defaults; use `-H 0.0.0.0` to expose the board on the LAN.
 
 Dates accept ISO, `YYYY-MM-DD`, `today`, `yesterday`, or relative `12h`, `7d`, `2w`, `1m`; unparsable values are rejected (exit 2) rather than ignored. Every command has `--json` for machine consumption; `list --json` returns `{ total, items }` with compact records (`--full` adds `promptText` etc.) and session keys look like `claude-code:<uuid>`. Query commands refresh the index first (incremental, usually milliseconds); pass `--no-auto-scan` to skip that, or `--index <file>` to point at another index.
 
@@ -190,7 +197,66 @@ All optional. Each adapter also honours the tool's own environment variable when
 | `VSCODE_USER_DIRS` | extra VS Code `User` folders (path-delimited) |
 | `AGENTBOARD_TRAE_USER_DIRS` | extra Trae `User` folders containing `workspaceStorage/` (path-delimited) |
 
+## Supported sources
+
+| Tool | How it is read today | Native query interface |
+| --- | --- | --- |
+| GitHub Copilot CLI | `~/.copilot/session-state/<id>/events.jsonl` + `workspace.yaml` | reserved: sessions sync to GitHub (`/chronicle`) but there is no public REST surface yet |
+| GitHub Copilot app (desktop) | same store; sessions are attributed by `workspace.yaml` `host_type`, then `client_name` (`github/cli`, `github/autopilot` = desktop app, `github/vscode`), then the `~/.copilot/data.db` `sessions` table | reserved |
+| VS Code Copilot Chat | `User/workspaceStorage/<hash>/chatSessions/*.jsonl` mutation logs (legacy `*.json` too), `globalStorage/emptyWindowChatSessions`, plus VS Code-hosted agent sessions in `~/.copilot` | none; `Chat: Export Session` is manual |
+| OpenCode | **`opencode serve` HTTP API** when `OPENCODE_SERVER_URL` is set; otherwise `~/.local/share/opencode/opencode.db` or legacy `storage/*.json` | **implemented** (`GET /session`, `/session/:id/message`) |
+| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (+ `archived_sessions/`) | reserved: `codex app-server` JSON-RPC `thread/list`, `thread/read` |
+| Cursor | IDE `state.vscdb` (`cursorDiskKV` composers + bubbles), CLI `~/.cursor/chats/<md5(cwd)>/<id>/store.db`, fallback `agent-transcripts/*.jsonl` | none |
+| Grok Build | `~/.grok/sessions/<cwd>/<id>/updates.jsonl` (ACP updates) + `summary.json` | reserved: `grok sessions list\|search` has an FTS5 index but no machine-readable output |
+| Claude Code | `~/.claude/projects/<encoded-cwd>/<session>.jsonl` (+ `subagents/`) | reserved: the Agent SDK resumes but cannot list sessions |
+| pi coding agent | `~/.pi/agent/sessions/<cwd>/*.jsonl` tree entries, active branch followed | library-only `SessionManager` |
+| Kimi Code / Kimi CLI | **`~/.kimi-code/session_index.jsonl`** to enumerate, then `wire.jsonl` + `state.json`; legacy `~/.kimi/sessions/.../context.jsonl` | **native index implemented** |
+| DeepSeek Harness (`dsh`) | `~/.dsh/sessions/<cwd>/session-<id>/session.jsonl(.zstd)`, zstd decoded in-process (torn frames tolerated) | reserved: `dsh web` is UI-only for now |
+| Trae | Trae IDE / SOLO chats from `User/workspaceStorage/<hash>/state.vscdb` (`ItemTable` icube mementos: `memento/icube-ai-agent-storage`, `ChatStore`, `icube-ai[-ng]-chat-storage-*`; reverse-engineered, best effort); `trae-agent` CLI `trajectory_*.json`. The IDE's `ModularData/ai-agent/database.db` is SQLCipher-encrypted (detected, not readable) — for anything missing use the in-app export + `agentboard import markdown --tool trae` | reserved: SOLO cloud sync has no public API |
+| WorkBuddy / CodeBuddy Code | `~/.codebuddy/projects/<cwd>/<session>.jsonl` (flat item schema and Claude-shaped legacy files) | none |
+| MiniMax Code (`mcode`) | OpenCode-schema SQLite under `MINIMAX_DATA_DIR` / `~/.minimax` / `~/.local/share/minimax-code`; pre-isolation builds land in OpenCode's DB and are shown there | reserved: ACP |
+| ZCode | `~/.zcode/cli/db/db.sqlite` (OpenCode schema) or legacy `~/.zcode/projects/*.jsonl` | reserved: `zcodex app-server` ACP `session/list` |
+| Gemini CLI | `~/.gemini/tmp/<projectHash>/chats/session-*.jsonl` (+ legacy `.json`), cwd from `.project_root`; subagent sessions skipped | none |
+| Qwen Code | `~/.qwen/projects/<sanitized-cwd>/chats/<id>.jsonl` (`QWEN_RUNTIME_DIR`, `QWEN_HOME`) | none |
+| Antigravity | CLI: `~/.gemini/antigravity-cli/history.jsonl` + `brain/<id>/.system_generated/logs/transcript_full.jsonl`; desktop: `monitor-state.json` + `.token-monitor/rpc-cache` usage records (conversation `.pb` / `.db` blobs are detected, not decoded) | none |
+| Amazon Q CLI / Kiro CLI | `<data_local_dir>/amazon-q/data.sqlite3` `conversations`, `<data_local_dir>/kiro-cli/data.sqlite3` `conversations_v2` (v1 fallback) | none |
+| Aider | `<project>/.aider.chat.history.md`, sessions split on `# aider chat started at …`; projects found one level under `~/{code,src,projects,…}` or `AGENTBOARD_AIDER_DIRS` | none |
+| Cline / Roo Code / Kilo Code | `<host>/User/globalStorage/<extension>/tasks/<id>/ui_messages.json` for VS Code, Insiders, VSCodium, Cursor, Windsurf; task index from `taskHistory.json`, `_index.json` or `state.vscdb` | none |
+| Continue / PearAI | `~/.continue/sessions/<id>.json` (`CONTINUE_GLOBAL_DIR`), `~/.pearai/sessions/` | none |
+| Crush | `<project>/.crush/crush.db` (depth-4 discovery under the same project roots, `AGENTBOARD_CRUSH_DIRS`) | none |
+| ForgeCode | `~/.forge/.forge.db` `conversations` (`FORGE_CONFIG`), both context serialisations | none |
+| Goose | `sessions.db` under `~/.local/share/goose`, `~/Library/Application Support/Block/goose`, `GOOSE_PATH_ROOT` | none |
+| llm CLI | `io.datasette.llm/logs.db` `conversations` + `responses` (`LLM_USER_PATH`) | none |
+| oh-my-pi | `~/.omp/agent/sessions/<cwd>/*.jsonl` (pi format) | none |
+| OpenHands | `~/.openhands/sessions/<sid>/events/*.json` + `metadata.json` | reserved: app-server REST |
+| Open Interpreter | `~/.openinterpreter/sessions/**/rollout-*.jsonl` (Codex format, shared parser) | none |
+| Mistral Vibe | `~/.vibe/logs/session/<dir>/meta.json` + `messages.jsonl` (`VIBE_HOME`) | none |
+| Zed (Agent Panel) | `threads/threads.db` (JSON or zstd blobs) under the Zed data dir | none |
+| ChatGPT (web) | official data export: `agentboard import chatgpt conversations.json` | consumer API: none (Compliance API is enterprise-only) |
+| Claude.ai (web) | official data export: `agentboard import claude-web conversations.json` | none |
+| Open WebUI | **REST API** (`OPENWEBUI_URL` + `OPENWEBUI_API_KEY`) | **implemented** |
+
+Every adapter declares its strategies in order of preference (`api` → `native-index` → `sqlite`/`file` → `import`) with a status of `implemented`, `reserved` or `unavailable`. `agentboard sources --json` and the **Sources** page print this matrix for the current machine, so when a vendor ships a query API the adapter can switch to it without changing the data model.
+
+Browser-based access to web chat boxes (for services without an API) is reserved as an interface only: see `src/engine/webchat/browser.ts` (`BrowserChatProvider`). Nothing is scraped today.
+
 ## How it works
+
+```mermaid
+flowchart LR
+  subgraph Stores["Each tool's own store"]
+    F[JSONL / JSON logs]
+    S[SQLite DBs]
+    A[HTTP APIs<br/>OpenCode · Open WebUI]
+    X[Exports<br/>ChatGPT · Claude.ai · Markdown]
+  end
+  Stores --> AD["adapters/*.ts<br/>detect → scan → load"]
+  AD --> IX["indexer.ts<br/>mtime+size fingerprints"]
+  IX --> DB[("~/.agentboard/index.db<br/>summaries + parts + FTS5")]
+  DB --> E[engine.ts facade]
+  E --> CLI[agentboard CLI]
+  E --> WEB["Next.js dashboard + /api"]
+```
 
 ```
 src/engine/
@@ -210,7 +276,21 @@ scripts/demo-data.ts  synthetic fixtures for every format
 
 The index holds session summaries plus the typed parts of each transcript (tool output capped at 16k chars per part); the dashboard's transcript view still re-reads the tool's own store when you open a session, so it never diverges from the source of truth. Locked SQLite databases (an IDE that is running) are copied to a temp file before reading.
 
-## Development
+## FAQ / Troubleshooting
+
+**`no such module: fts5` or `node:sqlite` errors** — your Node build is too old or its bundled SQLite lacks FTS5. Use Node 22.13+ (a recent Node 22 or 24 release).
+
+**A tool I use is missing** — run `agentboard sources` (or open **Sources**) to see probed paths and warnings. If the tool keeps its data somewhere non-standard, set the override variable listed under [Configuration](#configuration).
+
+**Trae IDE sessions are incomplete** — its `database.db` is SQLCipher-encrypted and cannot be read; use the in-app export and `agentboard import markdown <file> --tool trae`.
+
+**New sessions don't appear** — the board refreshes when the index is older than `AGENTBOARD_AUTO_SCAN_SECONDS` (default 60). Click **Rescan** or run `agentboard scan --full` to force a full re-parse.
+
+**`agentboard server status` exits with code 3** — that means the service is stopped; start it with `agentboard server start`.
+
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR:
 
 ```bash
 npm run typecheck && npm run lint
@@ -222,3 +302,7 @@ npm run demo && AGENTBOARD_FAKE_HOME=/tmp/agentboard-demo-home npm run cli -- sc
 `tests/adapters.test.ts` runs each adapter against the synthetic stores from `scripts/demo-data.ts` and checks four things per tool: `detect()` finds the fixture, `scan()` yields well-formed sessions (title, user prompt, time bounds, `seen` list, unique keys), the normalized result matches `tests/adapters.snapshot.json`, and `load()` round-trips every session back to the same transcript. It also asserts that no source session is claimed by two tools (the Copilot family shares one store). `tests/trae-vscdb.test.ts` and `tests/copilot-classify.test.ts` cover the reverse-engineered Trae layout and the Copilot host attribution with hand-written fixtures.
 
 Adding a tool means one file in `src/engine/adapters/` implementing `SourceAdapter`, a `ToolId` in `types.ts`, an entry in `tool-meta.ts` and `registry.ts`, a fixture block in `scripts/demo-data.ts`, then `npm run test:update` to record its snapshot.
+
+## License
+
+No license file has been added to this repository yet, so default copyright applies. Open an issue if you would like to use it under specific terms.
