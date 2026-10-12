@@ -6,7 +6,7 @@
 
 Claude Code · Codex · Cursor · Copilot · OpenCode · Gemini CLI · Kimi · Trae · Aider · Cline · Zed · and 25+ more, plus ChatGPT / Claude.ai exports
 
-![Node](https://img.shields.io/badge/node-%E2%89%A522.13-339933?logo=node.js&logoColor=white)
+![Node](https://img.shields.io/badge/node-22.16%2B%20%7C%2024%2B-339933?logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)
 ![SQLite](https://img.shields.io/badge/index-SQLite%20%2B%20FTS5-003B57?logo=sqlite&logoColor=white)
@@ -40,7 +40,7 @@ Most people now use several agents in parallel: Claude Code for one repo, Cursor
 
 ## Quick start
 
-Requires **Node 22.13+** (uses the built-in `node:sqlite`).
+Requires **Node 22.16+ or 24+** (uses the built-in `node:sqlite` with FTS5; Node 23 and Node ≤ 22.15 ship it without FTS5). A `.nvmrc` is included, so `nvm use` picks a working version.
 
 ```bash
 git clone https://github.com/tigeregit/agentboard.git && cd agentboard
@@ -278,7 +278,7 @@ The index holds session summaries plus the typed parts of each transcript (tool 
 
 ## FAQ / Troubleshooting
 
-**`no such module: fts5` or `node:sqlite` errors** — your Node build is too old or its bundled SQLite lacks FTS5. Use Node 22.13+ (a recent Node 22 or 24 release).
+**`no such module: fts5` or `node:sqlite` errors** — the `node:sqlite` bundled with your Node lacks FTS5. Node 22.0–22.15 and all of Node 23 are affected; use Node 22.16+ or 24+ (`nvm use` reads `.nvmrc`).
 
 **A tool I use is missing** — run `agentboard sources` (or open **Sources**) to see probed paths and warnings. If the tool keeps its data somewhere non-standard, set the override variable listed under [Configuration](#configuration).
 

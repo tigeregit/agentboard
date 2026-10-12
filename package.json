@@ -8,7 +8,7 @@
     "agentboard": "./bin/agentboard.mjs"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": "^22.16.0 || >=24.0.0"
   },
   "scripts": {
     "dev": "next dev -p 4817",
