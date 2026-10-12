@@ -6,6 +6,7 @@
 
 Claude Code · Codex · Cursor · Copilot · OpenCode · Gemini CLI · Kimi · Trae · Aider · Cline · Zed · and 25+ more, plus ChatGPT / Claude.ai exports
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Node](https://img.shields.io/badge/node-22.16%2B%20%7C%2024%2B-339933?logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)
@@ -305,4 +306,4 @@ Adding a tool means one file in `src/engine/adapters/` implementing `SourceAdapt
 
 ## License
 
-No license file has been added to this repository yet, so default copyright applies. Open an issue if you would like to use it under specific terms.
+[MIT](LICENSE) © 2026 Chen
